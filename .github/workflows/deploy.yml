@@ -1,0 +1,122 @@
+name: Deploy Lambda Function
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run linting
+        run: make lint
+
+      - name: Run unit tests
+        run: make test-unit
+
+      - name: Run integration tests
+        run: make test-integration
+
+      - name: Run acceptance tests
+        run: make test-acceptance
+
+      - name: Generate coverage report
+        run: make test-ci
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        if: github.event_name == 'pull_request'
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build Lambda package
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Upload to S3 (for Terraform)
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          aws s3 cp dist/lambda.zip s3://${{ secrets.DEPLOYMENT_BUCKET }}/lambda-builds/lambda-${TIMESTAMP}.zip
+          aws s3 cp dist/lambda.zip s3://${{ secrets.DEPLOYMENT_BUCKET }}/lambda-builds/lambda-latest.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: lambda-package
+          path: dist/lambda.zip
+          retention-days: 30
+
+      - name: Get Lambda Function URL
+        id: get-url
+        run: |
+          FUNCTION_URL=$(aws lambda get-function-url-config \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --query 'FunctionUrl' \
+            --output text 2>/dev/null || echo "Not configured")
+          echo "function_url=${FUNCTION_URL}" >> $GITHUB_OUTPUT
+
+      - name: Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Lambda package built successfully" >> $GITHUB_STEP_SUMMARY
+          echo "📦 Package uploaded to S3" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "Run Terraform apply in your infrastructure repository to deploy the new version" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.get-url.outputs.function_url }}" != "Not configured" ]; then
+            echo "🔗 Function URL: ${{ steps.get-url.outputs.function_url }}" >> $GITHUB_STEP_SUMMARY
+          fi
