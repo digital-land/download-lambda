@@ -71,5 +71,5 @@ jobs:
       - name: Deploy AWS Lambda function
         run: |
           aws lambda update-function-code \
-            --function-name ${{ matrix.environment }}-download-lambda-test \
+            --function-name ${{ matrix.environment }}-download-lambda \
             --zip-file fileb://lambda-${{ matrix.environment }}.zip
