@@ -58,3 +58,18 @@ jobs:
           chmod +x scripts/build.sh
           ./scripts/build.sh
 
+      - name: Create Lambda archive
+        run: |
+          cp dist/lambda.zip lambda-${{ matrix.environment }}.zip
+
+      - name: Upload Lambda artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-${{ matrix.environment }}
+          path: lambda-${{ matrix.environment }}.zip
+
+      - name: Deploy AWS Lambda function
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ matrix.environment }}-download-lambda-test \
+            --zip-file fileb://lambda-${{ matrix.environment }}.zip
