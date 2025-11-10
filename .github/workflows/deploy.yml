@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/deployment
   pull_request:
     branches:
       - main
@@ -63,7 +64,7 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/deployment') && github.event_name == 'push'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -82,8 +83,8 @@ jobs:
 
       - name: Build Lambda package
         run: |
-          chmod +x build.sh
-          ./build.sh
+          chmod +x scripts/build.sh
+          ./scripts/build.sh
 
       - name: Upload to S3 (for Terraform)
         run: |
