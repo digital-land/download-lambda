@@ -2,7 +2,7 @@ name: Deploy Lambda Function - New
 
 on:
   push:
-    branches: [main, feature/deployment]
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -32,7 +32,6 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
