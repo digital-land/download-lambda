@@ -4,8 +4,11 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD_DIR="${SCRIPT_DIR}/build"
-DIST_DIR="${SCRIPT_DIR}/dist"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BUILD_DIR="${REPO_ROOT}/build"
+DIST_DIR="${REPO_ROOT}/dist"
+SRC_DIR="${REPO_ROOT}/src"
+REQUIREMENTS_FILE="${REPO_ROOT}/requirements.txt"
 
 echo "==================================="
 echo "Building Lambda deployment package"
@@ -18,11 +21,11 @@ mkdir -p "${BUILD_DIR}" "${DIST_DIR}"
 
 # Copy source files
 echo "Copying source files..."
-cp -r "${SCRIPT_DIR}/src/"* "${BUILD_DIR}/"
+cp -r "${SRC_DIR}/." "${BUILD_DIR}/"
 
 # Install dependencies
 echo "Installing dependencies..."
-pip install -r "${SCRIPT_DIR}/requirements.txt" -t "${BUILD_DIR}/" --upgrade
+pip install -r "${REQUIREMENTS_FILE}" -t "${BUILD_DIR}/" --upgrade
 
 # Remove unnecessary files to reduce package size
 echo "Cleaning up unnecessary files..."
