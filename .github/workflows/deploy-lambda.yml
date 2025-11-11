@@ -62,6 +62,14 @@ jobs:
         run: |
           cp dist/lambda.zip lambda-${{ matrix.environment }}.zip
 
+      - name: Upload Lambda package to S3
+        id: upload
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          S3_KEY=lambda-builds/${{ matrix.environment }}/lambda-${TIMESTAMP}.zip
+          aws s3 cp lambda-${{ matrix.environment }}.zip s3://${{ matrix.environment }}-download-lambda-deployments/${S3_KEY}
+          echo "s3_key=${S3_KEY}" >> $GITHUB_OUTPUT
+
       - name: Upload Lambda artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
@@ -72,4 +80,5 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name ${{ matrix.environment }}-download-lambda \
-            --zip-file fileb://lambda-${{ matrix.environment }}.zip
+            --s3-bucket ${{ matrix.environment }}-download-lambda-deployments \
+            --s3-key ${{ steps.upload.outputs.s3_key }}
