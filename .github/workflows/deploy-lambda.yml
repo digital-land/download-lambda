@@ -10,7 +10,7 @@ on:
         description: The environment to deploy to.
 
 env:
-  AWS_REGION: us-west-2
+  AWS_REGION: eu-west-2
   PYTHON_VERSION: '3.11'
 
 jobs:
