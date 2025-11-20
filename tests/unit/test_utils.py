@@ -4,20 +4,17 @@ Unit tests for utility functions.
 These tests verify path parsing, request parsing, and utility functions
 without external dependencies. All AWS services are mocked.
 """
+
 import pytest
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-
-from utils import (
+from src.utils import (
     parse_cloudfront_request,
     _parse_path,
     _extract_request_info,
     get_content_type,
     get_filename,
 )
-from models import RequestContext
+from src.models import RequestContext
 
 
 class TestParsePath:
@@ -104,9 +101,7 @@ class TestParsePath:
 class TestExtractRequestInfo:
     """Unit tests for _extract_request_info function."""
 
-    def test_extract_from_lambda_function_url_event(
-        self, lambda_function_url_event
-    ):
+    def test_extract_from_lambda_function_url_event(self, lambda_function_url_event):
         """Test extracting path and query from Lambda Function URL event."""
         path, query_string = _extract_request_info(lambda_function_url_event)
 
@@ -205,10 +200,7 @@ class TestParseCloudFrontRequest:
         self, lambda_function_url_event_factory
     ):
         """Test parsing request without organisation-entity filter."""
-        event = lambda_function_url_event_factory(
-            path="/customers.csv",
-            query=""
-        )
+        event = lambda_function_url_event_factory(path="/customers.csv", query="")
 
         context = parse_cloudfront_request(event)
 
@@ -220,8 +212,7 @@ class TestParseCloudFrontRequest:
     ):
         """Test parsing request for Parquet output format."""
         event = lambda_function_url_event_factory(
-            path="/large-dataset.parquet",
-            query="organisation-entity=org-5"
+            path="/large-dataset.parquet", query="organisation-entity=org-5"
         )
 
         context = parse_cloudfront_request(event)

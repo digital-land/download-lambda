@@ -4,9 +4,8 @@ Shared test fixtures and configuration.
 This file contains pytest fixtures that are shared across unit, integration,
 and acceptance tests. Fixtures are organized by scope and purpose.
 """
-import json
+
 import os
-import threading
 import time
 from io import BytesIO
 from pathlib import Path
@@ -21,6 +20,7 @@ from moto.server import ThreadedMotoServer
 # ============================================================================
 # Path and Environment Fixtures
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def project_root() -> Path:
@@ -37,14 +37,6 @@ def src_path(project_root: Path) -> Path:
 @pytest.fixture(scope="function")
 def mock_env_vars(monkeypatch):
     """Set up mock environment variables for Lambda."""
-    import sys
-    from pathlib import Path
-
-    # Add src to path if not already there
-    src_path = Path(__file__).parent.parent / "src"
-    if str(src_path) not in sys.path:
-        sys.path.insert(0, str(src_path))
-
     # Set environment variables BEFORE importing lambda_function
     monkeypatch.setenv("DATASET_BUCKET", "test-bucket")
 
@@ -57,6 +49,7 @@ def mock_env_vars(monkeypatch):
 # Sample Data Fixtures
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def sample_dataframe() -> pd.DataFrame:
     """
@@ -64,13 +57,15 @@ def sample_dataframe() -> pd.DataFrame:
 
     Returns a DataFrame with organisation-entity column and sample data.
     """
-    return pd.DataFrame({
-        "id": range(1, 101),
-        "organisation-entity": [f"org-{i % 5}" for i in range(100)],
-        "name": [f"Record {i}" for i in range(1, 101)],
-        "value": [i * 100 for i in range(1, 101)],
-        "category": [f"Category {i % 3}" for i in range(100)],
-    })
+    return pd.DataFrame(
+        {
+            "id": range(1, 101),
+            "organisation-entity": [f"org-{i % 5}" for i in range(100)],
+            "name": [f"Record {i}" for i in range(1, 101)],
+            "value": [i * 100 for i in range(1, 101)],
+            "category": [f"Category {i % 3}" for i in range(100)],
+        }
+    )
 
 
 @pytest.fixture(scope="function")
@@ -89,6 +84,7 @@ def sample_parquet_bytes(sample_dataframe: pd.DataFrame) -> bytes:
 # ============================================================================
 # AWS Mock Fixtures
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def moto_server():
@@ -134,7 +130,7 @@ def s3_mock(aws_credentials, moto_server, monkeypatch):
         endpoint_url="http://localhost:5000",
         region_name="us-east-1",
         aws_access_key_id="testing",
-        aws_secret_access_key="testing"
+        aws_secret_access_key="testing",
     )
 
     # Configure DuckDB to use the moto server
@@ -175,6 +171,7 @@ def s3_bucket_with_data(s3_mock, sample_parquet_bytes) -> str:
 # ============================================================================
 # Lambda Event Fixtures
 # ============================================================================
+
 
 @pytest.fixture(scope="session")
 def lambda_function_url_event() -> Dict[str, Any]:
@@ -245,6 +242,7 @@ def lambda_function_url_event_factory():
             query="filter=value"
         )
     """
+
     def _create_event(
         path: str = "/test-dataset.csv",
         query: str = "",
@@ -263,12 +261,14 @@ def lambda_function_url_event_factory():
                 },
             },
         }
+
     return _create_event
 
 
 # ============================================================================
 # Test Data Cleanup
 # ============================================================================
+
 
 @pytest.fixture(scope="function", autouse=False)
 def cleanup_temp_files():

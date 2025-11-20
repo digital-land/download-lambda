@@ -3,12 +3,8 @@ Integration tests for streaming response functionality.
 
 These tests verify stream_response with real (mocked) S3 integration.
 """
-import json
-import pytest
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+import pytest
 
 from lambda_function import stream_response
 from utils import parse_cloudfront_request
@@ -49,8 +45,7 @@ def test_stream_response_filters_by_organisation_entity(
 ):
     """Test stream_response correctly filters data."""
     event = lambda_function_url_event_factory(
-        path="/test-dataset.csv",
-        query="organisation-entity=org-1"
+        path="/test-dataset.csv", query="organisation-entity=org-1"
     )
     request_ctx = parse_cloudfront_request(event)
     bucket = mock_env_vars["DATASET_BUCKET"]
@@ -91,7 +86,7 @@ def test_stream_response_exports_csv_from_parquet(
 
     lines = csv_data.strip().split("\n")
     assert len(lines) > 1  # Header + data
-    headers_line = lines[0].replace('"', '')
+    headers_line = lines[0].replace('"', "")
     headers = headers_line.split(",")
     assert "id" in headers
     assert "organisation-entity" in headers
@@ -127,8 +122,7 @@ def test_stream_response_returns_fewer_rows_when_filtered(
 
     # Filtered export
     event_filtered = lambda_function_url_event_factory(
-        path="/test-dataset.csv",
-        query="organisation-entity=org-1"
+        path="/test-dataset.csv", query="organisation-entity=org-1"
     )
     request_ctx_filtered = parse_cloudfront_request(event_filtered)
 

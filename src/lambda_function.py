@@ -33,6 +33,7 @@ Benefits of streaming:
 - Can handle gigabyte-sized responses
 - Better user experience with progress indicators
 """
+
 import json
 import logging
 import os
@@ -77,37 +78,44 @@ def lambda_handler(event: Dict[str, Any], response_stream, _context) -> None:
         if not dataset_bucket:
             response_stream.set_status_code(500)
             response_stream.set_headers({"Content-Type": "application/json"})
-            response_stream.write(json.dumps({
-                "error": "Server configuration error: DATASET_BUCKET not set",
-                "statusCode": 500
-            }).encode("utf-8"))
+            response_stream.write(
+                json.dumps(
+                    {
+                        "error": "Server configuration error: DATASET_BUCKET not set",
+                        "statusCode": 500,
+                    }
+                ).encode("utf-8")
+            )
             response_stream.end()
             return
 
         # Parse and validate request
         try:
             request_ctx = parse_cloudfront_request(event)
-            logger.info(f"Parsed request: dataset={request_ctx.path_params.dataset}, "
-                       f"format={request_ctx.output_format}, "
-                       f"filter={request_ctx.filter_value}")
+            logger.info(
+                f"Parsed request: dataset={request_ctx.path_params.dataset}, "
+                f"format={request_ctx.output_format}, "
+                f"filter={request_ctx.filter_value}"
+            )
         except (ValidationError, ValueError) as e:
             logger.warning(f"Request error: {e}")
             response_stream.set_status_code(400)
             response_stream.set_headers({"Content-Type": "application/json"})
-            response_stream.write(json.dumps({
-                "error": str(e),
-                "statusCode": 400
-            }).encode("utf-8"))
+            response_stream.write(
+                json.dumps({"error": str(e), "statusCode": 400}).encode("utf-8")
+            )
             response_stream.end()
             return
 
         # Set response headers
         response_stream.set_status_code(200)
-        response_stream.set_headers({
-            "Content-Type": get_content_type(request_ctx.output_format),
-            "Content-Disposition": f'attachment; filename="{get_filename(request_ctx.path_params.dataset, request_ctx.output_format)}"',
-            "Cache-Control": "public, max-age=3600",
-        })
+        response_stream.set_headers(
+            {
+                "Content-Type": get_content_type(request_ctx.output_format),
+                "Content-Disposition": f'attachment; filename="{get_filename(request_ctx.path_params.dataset, request_ctx.output_format)}"',
+                "Cache-Control": "public, max-age=3600",
+            }
+        )
 
         # Stream the data
         for chunk in stream_response(request_ctx, dataset_bucket):
@@ -115,26 +123,28 @@ def lambda_handler(event: Dict[str, Any], response_stream, _context) -> None:
 
         # Complete the response
         response_stream.end()
-        logger.info(f"Successfully completed streaming response for {request_ctx.path_params.dataset}")
+        logger.info(
+            f"Successfully completed streaming response for {request_ctx.path_params.dataset}"
+        )
 
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
         response_stream.set_status_code(404)
         response_stream.set_headers({"Content-Type": "application/json"})
-        response_stream.write(json.dumps({
-            "error": str(e),
-            "statusCode": 404
-        }).encode("utf-8"))
+        response_stream.write(
+            json.dumps({"error": str(e), "statusCode": 404}).encode("utf-8")
+        )
         response_stream.end()
 
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}\n{traceback.format_exc()}")
         response_stream.set_status_code(500)
         response_stream.set_headers({"Content-Type": "application/json"})
-        response_stream.write(json.dumps({
-            "error": f"Internal server error: {str(e)}",
-            "statusCode": 500
-        }).encode("utf-8"))
+        response_stream.write(
+            json.dumps(
+                {"error": f"Internal server error: {str(e)}", "statusCode": 500}
+            ).encode("utf-8")
+        )
         response_stream.end()
 
 
@@ -167,7 +177,9 @@ def stream_response(request_ctx: RequestContext, bucket: str) -> Iterator[bytes]
     """
     try:
         # Log the streaming request
-        logger.info(f"Starting streaming response for {request_ctx.path_params.dataset}")
+        logger.info(
+            f"Starting streaming response for {request_ctx.path_params.dataset}"
+        )
 
         # Create data processor with S3 configuration
         data_processor = DataProcessor(bucket=bucket, prefix="dataset")
@@ -184,12 +196,12 @@ def stream_response(request_ctx: RequestContext, bucket: str) -> Iterator[bytes]
         for chunk in data_processor.stream_data(**stream_params):
             yield chunk
 
-        logger.info(f"Completed streaming response for {request_ctx.path_params.dataset}")
+        logger.info(
+            f"Completed streaming response for {request_ctx.path_params.dataset}"
+        )
 
     except Exception as e:
         logger.error(f"Error during streaming: {str(e)}")
         # In streaming mode, if headers are already sent, we can't send an error response
         # The connection will be terminated
         raise
-
-

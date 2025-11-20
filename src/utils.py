@@ -1,6 +1,6 @@
 """Utility functions for request parsing and data processing."""
-import re
-from typing import Dict, Any, Optional, Tuple
+
+from typing import Dict, Any, Tuple
 from urllib.parse import parse_qs, unquote
 
 from models import PathParams, QueryParams, RequestContext

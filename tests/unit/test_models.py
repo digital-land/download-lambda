@@ -4,14 +4,11 @@ Unit tests for Pydantic models.
 These tests verify model validation, field constraints, and data transformation
 without any external dependencies.
 """
+
 import pytest
 from pydantic import ValidationError
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-
-from models import PathParams, QueryParams, RequestContext
+from src.models import PathParams, QueryParams, RequestContext
 
 
 class TestPathParams:

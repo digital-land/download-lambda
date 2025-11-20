@@ -1,6 +1,7 @@
 .PHONY: install test test-unit test-integration test-acceptance test-coverage lint format build deploy clean
 
 install-dev:
+	pip install -e .
 	pip install -r requirements-dev.txt
 
 # Run all tests
@@ -30,16 +31,15 @@ test-ci:
 	pytest --cov=src --cov-report=xml --cov-report=term
 
 lint:
-	ruff check src/ tests/
 	black --check src/ tests/
+	flake8 src/ tests/
 	mypy src/
 
 format:
 	black src/ tests/
-	ruff check --fix src/ tests/
 
 build:
-	./build.sh
+	./scripts/build.sh
 
 clean:
 	rm -rf build/ dist/ htmlcov/ .coverage .pytest_cache/

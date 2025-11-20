@@ -4,19 +4,17 @@ Unit tests for data processor.
 These tests verify DuckDB-based data processing with mocked S3 dependencies.
 Tests focus on filter pushdown, Arrow streaming, and memory efficiency.
 """
+
 import pytest
 import pandas as pd
 from io import BytesIO
 from unittest.mock import Mock, patch, MagicMock
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-
 try:
     import duckdb
     import pyarrow as pa
-    from data_processor import DataProcessor
+    from src.data_processor import DataProcessor
+
     DUCKDB_AVAILABLE = True
 except ImportError:
     DUCKDB_AVAILABLE = False
@@ -51,7 +49,7 @@ class TestDataProcessor:
 
     def test_init_detects_aws_region(self):
         """Test that __init__ detects AWS region from session."""
-        with patch('boto3.Session') as mock_session:
+        with patch("boto3.Session") as mock_session:
             mock_session.return_value.region_name = "eu-west-1"
             processor = DataProcessor(bucket="test-bucket")
 
@@ -59,7 +57,7 @@ class TestDataProcessor:
 
     def test_init_defaults_to_us_east_1_when_no_region(self):
         """Test that __init__ defaults to us-east-1 when region not set."""
-        with patch('boto3.Session') as mock_session:
+        with patch("boto3.Session") as mock_session:
             mock_session.return_value.region_name = None
             processor = DataProcessor(bucket="test-bucket")
 
@@ -97,17 +95,19 @@ class TestDataProcessor:
         # Mock credentials
         mock_creds = Mock()
         mock_creds.get_frozen_credentials.return_value = Mock(
-            access_key="test_key",
-            secret_key="test_secret",
-            token="test_token"
+            access_key="test_key", secret_key="test_secret", token="test_token"
         )
 
-        with patch.object(processor.session, 'get_credentials', return_value=mock_creds):
+        with patch.object(
+            processor.session, "get_credentials", return_value=mock_creds
+        ):
             conn = processor._get_duckdb_conn()
 
             # Verify credentials were set (can't directly check in DuckDB)
             # But we can verify no error was raised
-            result = conn.execute("SELECT current_setting('s3_access_key_id')").fetchone()
+            result = conn.execute(
+                "SELECT current_setting('s3_access_key_id')"
+            ).fetchone()
             assert result[0] == "test_key"
 
             conn.close()
@@ -116,8 +116,8 @@ class TestDataProcessor:
         """Test that _get_duckdb_conn logs warning when credentials missing."""
         processor = DataProcessor(bucket="test-bucket")
 
-        with patch.object(processor.session, 'get_credentials', return_value=None):
-            with patch('data_processor.logger') as mock_logger:
+        with patch.object(processor.session, "get_credentials", return_value=None):
+            with patch("data_processor.logger") as mock_logger:
                 conn = processor._get_duckdb_conn()
 
                 # Should log warning about missing credentials
@@ -160,11 +160,13 @@ class TestDataProcessor:
         """Test that _arrow_to_csv preserves data types correctly."""
 
         processor = DataProcessor(bucket="test-bucket")
-        df = pd.DataFrame({
-            "int_col": [1, 2, 3],
-            "float_col": [1.1, 2.2, 3.3],
-            "str_col": ["a", "b", "c"],
-        })
+        df = pd.DataFrame(
+            {
+                "int_col": [1, 2, 3],
+                "float_col": [1.1, 2.2, 3.3],
+                "str_col": ["a", "b", "c"],
+            }
+        )
         table = pa.Table.from_pandas(df)
         batch = table.to_batches()[0]
 
@@ -190,7 +192,9 @@ class TestDataProcessor:
         first_content = b"".join(chunks).decode("utf-8")
         assert first_content.startswith("[\n")
 
-    def test_arrow_to_json_starts_with_comma_for_subsequent_chunks(self, sample_dataframe):
+    def test_arrow_to_json_starts_with_comma_for_subsequent_chunks(
+        self, sample_dataframe
+    ):
         """Test that _arrow_to_json starts with comma for subsequent chunks."""
 
         processor = DataProcessor(bucket="test-bucket")
@@ -252,10 +256,7 @@ class TestDataProcessor:
 
         # Mock DuckDB to raise IOException for missing file
         with pytest.raises((FileNotFoundError, duckdb.IOException, Exception)):
-            list(processor.stream_data(
-                dataset="nonexistent",
-                extension="csv"
-            ))
+            list(processor.stream_data(dataset="nonexistent", extension="csv"))
 
     def test_stream_data_closes_connection_on_error(self, s3_mock):
         """Test that stream_data closes DuckDB connection on error."""
@@ -264,10 +265,7 @@ class TestDataProcessor:
 
         # Attempt to stream non-existent file
         try:
-            list(processor.stream_data(
-                dataset="nonexistent",
-                extension="csv"
-            ))
+            list(processor.stream_data(dataset="nonexistent", extension="csv"))
         except Exception:
             pass  # Expected to fail
 
@@ -288,15 +286,12 @@ class TestDataProcessor:
         mock_result.fetch_arrow_reader.return_value = mock_reader
         mock_conn.execute.return_value = mock_result
 
-        with patch.object(processor, '_get_duckdb_conn', return_value=mock_conn):
-            result = processor.stream_data(
-                dataset="test",
-                extension="csv"
-            )
+        with patch.object(processor, "_get_duckdb_conn", return_value=mock_conn):
+            result = processor.stream_data(dataset="test", extension="csv")
 
             # Verify it's a generator
-            assert hasattr(result, '__iter__')
-            assert hasattr(result, '__next__')
+            assert hasattr(result, "__iter__")
+            assert hasattr(result, "__next__")
 
     def test_stream_data_includes_where_clause_with_filter(self):
         """Test that stream_data includes WHERE clause when filter provided."""
@@ -307,19 +302,19 @@ class TestDataProcessor:
         mock_reader = MagicMock()
 
         # Create a proper schema mock
-        mock_schema = pa.schema([('id', pa.int64()), ('name', pa.string())])
+        mock_schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
         mock_reader.schema = mock_schema
         mock_reader.__iter__ = Mock(return_value=iter([]))
 
         mock_result.fetch_record_batch.return_value = mock_reader
         mock_conn.execute.return_value = mock_result
 
-        with patch.object(processor, '_get_duckdb_conn', return_value=mock_conn):
-            list(processor.stream_data(
-                dataset="test",
-                extension="csv",
-                organisation_entity="org-1"
-            ))
+        with patch.object(processor, "_get_duckdb_conn", return_value=mock_conn):
+            list(
+                processor.stream_data(
+                    dataset="test", extension="csv", organisation_entity="org-1"
+                )
+            )
 
             # Verify execute was called with parameterized query
             call_args = mock_conn.execute.call_args
@@ -339,19 +334,19 @@ class TestDataProcessor:
         mock_reader = MagicMock()
 
         # Create a proper schema mock
-        mock_schema = pa.schema([('id', pa.int64()), ('name', pa.string())])
+        mock_schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
         mock_reader.schema = mock_schema
         mock_reader.__iter__ = Mock(return_value=iter([]))
 
         mock_result.fetch_record_batch.return_value = mock_reader
         mock_conn.execute.return_value = mock_result
 
-        with patch.object(processor, '_get_duckdb_conn', return_value=mock_conn):
-            list(processor.stream_data(
-                dataset="test",
-                extension="csv",
-                organisation_entity=None
-            ))
+        with patch.object(processor, "_get_duckdb_conn", return_value=mock_conn):
+            list(
+                processor.stream_data(
+                    dataset="test", extension="csv", organisation_entity=None
+                )
+            )
 
             # Verify execute was called without WHERE
             call_args = mock_conn.execute.call_args

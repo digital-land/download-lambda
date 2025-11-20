@@ -1,10 +1,12 @@
 """Pydantic models for request validation."""
+
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PathParams(BaseModel):
     """Path parameters extracted from the URL."""
+
     dataset: str = Field(..., min_length=1, max_length=100, description="Dataset name")
     extension: Literal["csv", "json", "parquet"] = Field(
         ..., description="Output format extension"
@@ -32,6 +34,7 @@ class PathParams(BaseModel):
 
 class QueryParams(BaseModel):
     """Query parameters from the request."""
+
     model_config = ConfigDict(populate_by_name=True)
 
     organisation_entity: Optional[str] = Field(
@@ -43,6 +46,7 @@ class QueryParams(BaseModel):
 
 class RequestContext(BaseModel):
     """Complete validated request context."""
+
     path_params: PathParams
     query_params: QueryParams
 

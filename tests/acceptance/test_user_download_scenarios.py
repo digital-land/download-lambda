@@ -17,15 +17,12 @@ Acceptance Criteria:
 - I WANT THE system to reject invalid requests
 - SO THAT the service remains secure and reliable
 """
+
 import json
 import pytest
 from io import BytesIO
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-
-from lambda_function import lambda_handler
+from src.lambda_function import lambda_handler
 
 
 class MockResponseStream:
@@ -67,6 +64,7 @@ class MockResponseStream:
 @pytest.fixture
 def call_lambda_handler():
     """Fixture to call streaming lambda_handler and return buffered-style response."""
+
     def _call(event):
         mock_stream = MockResponseStream()
         try:
@@ -75,12 +73,12 @@ def call_lambda_handler():
             # If handler raises exception, return error response
             mock_stream.set_status_code(500)
             mock_stream.set_headers({"Content-Type": "application/json"})
-            mock_stream.write(json.dumps({
-                "error": str(e),
-                "statusCode": 500
-            }).encode("utf-8"))
+            mock_stream.write(
+                json.dumps({"error": str(e), "statusCode": 500}).encode("utf-8")
+            )
             mock_stream.end()
         return mock_stream.get_response()
+
     return _call
 
 
@@ -94,7 +92,11 @@ class TestUserDownloadsDatasetInCsvFormat:
     """
 
     def test_user_requests_csv_download_and_receives_valid_csv(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a dataset exists in S3
@@ -126,7 +128,11 @@ class TestUserDownloadsDatasetInCsvFormat:
         assert "category" in lines[0]
 
     def test_user_opens_csv_in_spreadsheet_tool(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a user has downloaded a CSV file
@@ -161,7 +167,11 @@ class TestUserDownloadsDatasetInJsonFormat:
     """
 
     def test_user_requests_json_download_and_receives_valid_json(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a dataset exists in S3
@@ -184,7 +194,11 @@ class TestUserDownloadsDatasetInJsonFormat:
         assert "id" in json_content
 
     def test_user_parses_json_in_application(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a user has downloaded JSON data
@@ -214,7 +228,11 @@ class TestUserFiltersDatasetByOrganisation:
     """
 
     def test_user_filters_dataset_and_receives_only_matching_records(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a dataset contains records for multiple organisations
@@ -223,8 +241,7 @@ class TestUserFiltersDatasetByOrganisation:
         AND no records from other organisations are included
         """
         event = lambda_function_url_event_factory(
-            path="/test-dataset.csv",
-            query="organisation-entity=org-1"
+            path="/test-dataset.csv", query="organisation-entity=org-1"
         )
 
         response = call_lambda_handler(event)
@@ -234,7 +251,8 @@ class TestUserFiltersDatasetByOrganisation:
         # Verify only org-1 records
         csv_content = response["body"]
         data_lines = [
-            line for line in csv_content.split("\n")
+            line
+            for line in csv_content.split("\n")
             if line and not line.startswith("id,")
         ]
 
@@ -244,7 +262,11 @@ class TestUserFiltersDatasetByOrganisation:
                 assert "org-1" in line
 
     def test_user_receives_smaller_download_when_filtering(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a large dataset
@@ -259,8 +281,7 @@ class TestUserFiltersDatasetByOrganisation:
 
         # Filtered request
         event_filtered = lambda_function_url_event_factory(
-            path="/test-dataset.csv",
-            query="organisation-entity=org-1"
+            path="/test-dataset.csv", query="organisation-entity=org-1"
         )
         response_filtered = call_lambda_handler(event_filtered)
         filtered_size = len(response_filtered["body"])
@@ -269,7 +290,11 @@ class TestUserFiltersDatasetByOrganisation:
         assert filtered_size < full_size
 
     def test_user_receives_empty_result_when_no_matches(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a user filters by an organisation that doesn't exist
@@ -278,8 +303,7 @@ class TestUserFiltersDatasetByOrganisation:
         AND no error is raised
         """
         event = lambda_function_url_event_factory(
-            path="/test-dataset.csv",
-            query="organisation-entity=nonexistent"
+            path="/test-dataset.csv", query="organisation-entity=nonexistent"
         )
 
         response = call_lambda_handler(event)
@@ -305,7 +329,11 @@ class TestSystemRejectsInvalidRequests:
     """
 
     def test_system_rejects_request_for_nonexistent_dataset(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a user requests a dataset that doesn't exist
@@ -323,7 +351,11 @@ class TestSystemRejectsInvalidRequests:
         assert "not found" in body["error"].lower()
 
     def test_system_rejects_unsupported_file_format(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a user requests an unsupported file format
@@ -340,7 +372,11 @@ class TestSystemRejectsInvalidRequests:
         assert "error" in body
 
     def test_system_blocks_path_traversal_attack(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a malicious user attempts path traversal
@@ -357,7 +393,11 @@ class TestSystemRejectsInvalidRequests:
         assert "error" in body
 
     def test_system_handles_malformed_request_gracefully(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a user sends a malformed request
@@ -386,7 +426,11 @@ class TestUserDownloadsLargeDataset:
     """
 
     def test_user_downloads_large_dataset_successfully(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a large dataset exists in S3
@@ -416,7 +460,11 @@ class TestCdnCachingBehavior:
     """
 
     def test_response_includes_cache_control_headers(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a user requests a dataset
@@ -432,7 +480,11 @@ class TestCdnCachingBehavior:
         assert "max-age" in response["headers"]["Cache-Control"]
 
     def test_response_is_cacheable_for_unfiltered_requests(
-        self, mock_env_vars, s3_bucket_with_data, lambda_function_url_event_factory, call_lambda_handler
+        self,
+        mock_env_vars,
+        s3_bucket_with_data,
+        lambda_function_url_event_factory,
+        call_lambda_handler,
     ):
         """
         GIVEN a user requests an unfiltered dataset

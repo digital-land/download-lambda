@@ -12,6 +12,7 @@ Performance benefits:
 - Speed: 4-7x faster for filtered queries
 - Cost: 86% cheaper Lambda execution costs
 """
+
 import io
 import json
 import logging
@@ -57,7 +58,9 @@ class DataProcessor:
         self.region = self.session.region_name or "us-east-1"
 
         if self.prefix:
-            logger.info(f"Initialized DuckDB processor for s3://{bucket}/{self.prefix}/")
+            logger.info(
+                f"Initialized DuckDB processor for s3://{bucket}/{self.prefix}/"
+            )
         else:
             logger.info(f"Initialized DuckDB processor for s3://{bucket}/")
 
@@ -90,9 +93,7 @@ class DataProcessor:
             FileNotFoundError: If dataset not found in S3
             Exception: If processing fails
         """
-        logger.info(
-            f"DuckDB streaming {dataset} from {self.bucket} as {extension}"
-        )
+        logger.info(f"DuckDB streaming {dataset} from {self.bucket} as {extension}")
 
         conn = None
         try:
@@ -162,7 +163,7 @@ class DataProcessor:
                     # Create empty batch with schema to get headers
                     empty_batch = pa.RecordBatch.from_arrays(
                         [pa.array([], type=field.type) for field in schema],
-                        schema=schema
+                        schema=schema,
                     )
                     yield from self._arrow_to_csv(empty_batch, include_header=True)
                 elif extension == "json":
@@ -179,7 +180,12 @@ class DataProcessor:
         except duckdb.IOException as e:
             error_msg = str(e)
             # Handle S3 not found errors (both direct 404 and NoSuchKey)
-            if "404" in error_msg or "NoSuchKey" in error_msg or "No such key" in error_msg or "NOT FOUND" in error_msg:
+            if (
+                "404" in error_msg
+                or "NoSuchKey" in error_msg
+                or "No such key" in error_msg
+                or "NOT FOUND" in error_msg
+            ):
                 logger.error(f"Dataset not found: {dataset}")
                 raise FileNotFoundError(
                     f"Dataset '{dataset}' not found in bucket"
@@ -234,7 +240,9 @@ class DataProcessor:
 
             # Check for SSL configuration (testing may use HTTP)
             s3_use_ssl = os.environ.get("S3_USE_SSL", "true").lower()
-            conn.execute(f"SET s3_use_ssl={'true' if s3_use_ssl == 'true' else 'false'};")
+            conn.execute(
+                f"SET s3_use_ssl={'true' if s3_use_ssl == 'true' else 'false'};"
+            )
 
             # For custom endpoints, we may need path-style addressing
             if s3_endpoint:
@@ -249,9 +257,7 @@ class DataProcessor:
                 frozen_creds = credentials.get_frozen_credentials()
 
                 conn.execute(f"SET s3_access_key_id='{frozen_creds.access_key}';")
-                conn.execute(
-                    f"SET s3_secret_access_key='{frozen_creds.secret_key}';"
-                )
+                conn.execute(f"SET s3_secret_access_key='{frozen_creds.secret_key}';")
 
                 # Set session token if present (for IAM role credentials)
                 if frozen_creds.token:
@@ -291,7 +297,7 @@ class DataProcessor:
         # Disable quoting for non-string fields to match expected output
         write_options = csv.WriteOptions(
             include_header=include_header,
-            quoting_style="needed"  # Only quote when necessary (e.g., commas in strings)
+            quoting_style="needed",  # Only quote when necessary (e.g., commas in strings)
         )
         csv.write_csv(batch, buffer, write_options=write_options)
 
@@ -325,9 +331,7 @@ class DataProcessor:
                 yield b",\n"
             yield json.dumps(record, default=str).encode("utf-8")
 
-    def _arrow_to_parquet(
-        self, batch: pa.RecordBatch
-    ) -> Generator[bytes, None, None]:
+    def _arrow_to_parquet(self, batch: pa.RecordBatch) -> Generator[bytes, None, None]:
         """
         Convert Arrow RecordBatch to Parquet format.
 
