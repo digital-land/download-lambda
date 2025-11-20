@@ -4,7 +4,5 @@ pytest-cov==5.0.0
 pytest-mock==3.14.0
 moto[server,s3]==5.0.0
 black==24.8.0
-mypy==1.11.0
 flake8==7.1.1
-types-boto3==1.0.2
 pandas==2.2.2

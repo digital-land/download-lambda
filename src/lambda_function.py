@@ -109,10 +109,15 @@ def lambda_handler(event: Dict[str, Any], response_stream, _context) -> None:
 
         # Set response headers
         response_stream.set_status_code(200)
+
+        file_name = get_filename(
+            request_ctx.path_params.dataset, request_ctx.output_format
+        )
+        content_type = get_content_type(request_ctx.output_format)
         response_stream.set_headers(
             {
-                "Content-Type": get_content_type(request_ctx.output_format),
-                "Content-Disposition": f'attachment; filename="{get_filename(request_ctx.path_params.dataset, request_ctx.output_format)}"',
+                "Content-Type": content_type,
+                "Content-Disposition": f'attachment; filename="{file_name}"',
                 "Cache-Control": "public, max-age=3600",
             }
         )

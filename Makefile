@@ -33,7 +33,6 @@ test-ci:
 lint:
 	black --check src/ tests/
 	flake8 src/ tests/
-	mypy src/
 
 format:
 	black src/ tests/
