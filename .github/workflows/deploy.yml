@@ -15,9 +15,12 @@ jobs:
     uses: ./.github/workflows/test.yml
 
   build:
-    needs: test
     runs-on: ubuntu-latest
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/feature/deployment') && github.event_name == 'push'
+    needs: [detect-environments]
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.detect-environments.outputs.environments) }}
+    environment: ${{ matrix.environment }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,11 +30,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Configure AWS credentials
+      - name: Set up AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets.DEPLOY_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEPLOY_AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Build Lambda package
@@ -39,38 +42,27 @@ jobs:
           chmod +x scripts/build.sh
           ./scripts/build.sh
 
-      - name: Upload to S3 (for Terraform)
+      - name: Create Lambda archive
+        run: |
+          cp dist/lambda.zip lambda-${{ matrix.environment }}.zip
+
+      - name: Upload Lambda package to S3
+        id: upload
         run: |
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          aws s3 cp dist/lambda.zip s3://${{ secrets.DEPLOYMENT_BUCKET }}/lambda-builds/lambda-${TIMESTAMP}.zip
-          aws s3 cp dist/lambda.zip s3://${{ secrets.DEPLOYMENT_BUCKET }}/lambda-builds/lambda-latest.zip
+          S3_KEY=lambda-builds/${{ matrix.environment }}/lambda-${TIMESTAMP}.zip
+          aws s3 cp lambda-${{ matrix.environment }}.zip s3://${{ matrix.environment }}-download-lambda-deployments/${S3_KEY}
+          echo "s3_key=${S3_KEY}" >> $GITHUB_OUTPUT
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
+      - name: Upload Lambda artifact for deployment job
+        uses: actions/upload-artifact@v4
         with:
-          name: lambda-package
-          path: dist/lambda.zip
-          retention-days: 30
+          name: lambda-${{ matrix.environment }}
+          path: lambda-${{ matrix.environment }}.zip
 
-      - name: Get Lambda Function URL
-        id: get-url
+      - name: Deploy AWS Lambda function
         run: |
-          FUNCTION_URL=$(aws lambda get-function-url-config \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --query 'FunctionUrl' \
-            --output text 2>/dev/null || echo "Not configured")
-          echo "function_url=${FUNCTION_URL}" >> $GITHUB_OUTPUT
-
-      - name: Summary
-        run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Lambda package built successfully" >> $GITHUB_STEP_SUMMARY
-          echo "📦 Package uploaded to S3" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "Run Terraform apply in your infrastructure repository to deploy the new version" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.get-url.outputs.function_url }}" != "Not configured" ]; then
-            echo "🔗 Function URL: ${{ steps.get-url.outputs.function_url }}" >> $GITHUB_STEP_SUMMARY
-          fi
+          aws lambda update-function-code \
+            --function-name ${{ matrix.environment }}-download-lambda \
+            --s3-bucket ${{ matrix.environment }}-download-lambda-deployments \
+            --s3-key ${{ steps.upload.outputs.s3_key }}
