@@ -53,31 +53,16 @@ logger.info(f"Directory contents: {os.listdir('.')}")
 
 from pydantic import ValidationError  # noqa: E402
 
-try:
-    # Lambda environment (flat structure)
-    logger.info("Attempting flat imports for Lambda environment...")
-    from models import RequestContext  # noqa: E402
-    from utils import (
-        parse_cloudfront_request,
-        get_content_type,
-        get_filename,
-    )  # noqa: E402
-    from data_processor import DataProcessor  # noqa: E402
+# Now that we're using src/ package structure in Lambda too, use relative imports
+from .models import RequestContext  # noqa: E402
+from .utils import (  # noqa: E402
+    parse_cloudfront_request,
+    get_content_type,
+    get_filename,
+)
+from .data_processor import DataProcessor  # noqa: E402
 
-    logger.info("Successfully imported using flat structure")
-except ImportError as e:
-    # Local/test environment (package structure)
-    logger.info(f"Flat import failed: {e}. Trying relative imports...")
-    logger.info(f"Full traceback: {traceback.format_exc()}")
-    from .models import RequestContext  # noqa: E402
-    from .utils import (
-        parse_cloudfront_request,
-        get_content_type,
-        get_filename,
-    )  # noqa: E402
-    from .data_processor import DataProcessor  # noqa: E402
-
-    logger.info("Successfully imported using relative imports")
+logger.info("Successfully imported modules from src package")
 
 
 def lambda_handler(event: Dict[str, Any], response_stream, _context) -> None:
