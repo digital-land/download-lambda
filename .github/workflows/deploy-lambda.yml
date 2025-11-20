@@ -2,7 +2,7 @@ name: Deploy Lambda Function - New
 
 on:
   push:
-    branches: [main, feature/deployment]
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -10,7 +10,7 @@ on:
         description: The environment to deploy to.
 
 env:
-  AWS_REGION: us-west-2
+  AWS_REGION: eu-west-2
   PYTHON_VERSION: '3.11'
 
 jobs:
@@ -32,7 +32,11 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [detect-environments]
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.detect-environments.outputs.environments) }}
+    environment: ${{ matrix.environment }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -54,3 +58,27 @@ jobs:
           chmod +x scripts/build.sh
           ./scripts/build.sh
 
+      - name: Create Lambda archive
+        run: |
+          cp dist/lambda.zip lambda-${{ matrix.environment }}.zip
+
+      - name: Upload Lambda package to S3
+        id: upload
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          S3_KEY=lambda-builds/${{ matrix.environment }}/lambda-${TIMESTAMP}.zip
+          aws s3 cp lambda-${{ matrix.environment }}.zip s3://${{ matrix.environment }}-download-lambda-deployments/${S3_KEY}
+          echo "s3_key=${S3_KEY}" >> $GITHUB_OUTPUT
+
+      - name: Upload Lambda artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-${{ matrix.environment }}
+          path: lambda-${{ matrix.environment }}.zip
+
+      - name: Deploy AWS Lambda function
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ matrix.environment }}-download-lambda \
+            --s3-bucket ${{ matrix.environment }}-download-lambda-deployments \
+            --s3-key ${{ steps.upload.outputs.s3_key }}
