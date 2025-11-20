@@ -3,6 +3,7 @@
 install-dev:
 	pip install -e .
 	pip install -r requirements-dev.txt
+	pre-commit install
 
 # Run all tests
 test:

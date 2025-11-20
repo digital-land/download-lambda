@@ -100,7 +100,9 @@ class TestDataProcessor:
         mock_creds = mocker.Mock()
         mock_creds.get_frozen_credentials.return_value = mock_frozen_creds
 
-        mocker.patch.object(processor.session, "get_credentials", return_value=mock_creds)
+        mocker.patch.object(
+            processor.session, "get_credentials", return_value=mock_creds
+        )
 
         conn = processor._get_duckdb_conn()
 
