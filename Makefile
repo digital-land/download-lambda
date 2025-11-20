@@ -10,15 +10,15 @@ test:
 
 # Run only unit tests (fast)
 test-unit:
-	pytest tests/unit/ -v
+	python -m pytest tests/unit/ -v
 
 # Run only integration tests
 test-integration:
-	pytest tests/integration/ -v
+	python -m pytest tests/integration/ -v
 
 # Run only acceptance tests
 test-acceptance:
-	pytest tests/acceptance/ -v
+	python -m pytest tests/acceptance/ -v
 
 # Run tests with detailed coverage report
 test-coverage:

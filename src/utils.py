@@ -3,7 +3,7 @@
 from typing import Dict, Any, Tuple
 from urllib.parse import parse_qs, unquote
 
-from models import PathParams, QueryParams, RequestContext
+from src.models import PathParams, QueryParams, RequestContext
 
 
 def parse_cloudfront_request(event: Dict[str, Any]) -> RequestContext:

@@ -6,8 +6,8 @@ These tests verify stream_response with real (mocked) S3 integration.
 
 import pytest
 
-from lambda_function import stream_response
-from utils import parse_cloudfront_request
+from src.lambda_function import stream_response
+from src.utils import parse_cloudfront_request
 
 
 def test_stream_response_returns_csv_data(

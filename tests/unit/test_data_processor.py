@@ -8,7 +8,6 @@ Tests focus on filter pushdown, Arrow streaming, and memory efficiency.
 import pytest
 import pandas as pd
 from io import BytesIO
-from unittest.mock import Mock, patch, MagicMock
 
 try:
     import duckdb
@@ -47,21 +46,23 @@ class TestDataProcessor:
 
         assert processor.prefix == ""
 
-    def test_init_detects_aws_region(self):
+    def test_init_detects_aws_region(self, mocker):
         """Test that __init__ detects AWS region from session."""
-        with patch("boto3.Session") as mock_session:
-            mock_session.return_value.region_name = "eu-west-1"
-            processor = DataProcessor(bucket="test-bucket")
+        mock_session = mocker.Mock()
+        mock_session.region_name = "eu-west-1"
+        mocker.patch("boto3.Session", return_value=mock_session)
 
-            assert processor.region == "eu-west-1"
+        processor = DataProcessor(bucket="test-bucket")
+        assert processor.region == "eu-west-1"
 
-    def test_init_defaults_to_us_east_1_when_no_region(self):
+    def test_init_defaults_to_us_east_1_when_no_region(self, mocker):
         """Test that __init__ defaults to us-east-1 when region not set."""
-        with patch("boto3.Session") as mock_session:
-            mock_session.return_value.region_name = None
-            processor = DataProcessor(bucket="test-bucket")
+        mock_session = mocker.Mock()
+        mock_session.region_name = None
+        mocker.patch("boto3.Session", return_value=mock_session)
 
-            assert processor.region == "us-east-1"
+        processor = DataProcessor(bucket="test-bucket")
+        assert processor.region == "us-east-1"
 
     def test_get_duckdb_conn_installs_httpfs_extension(self):
         """Test that _get_duckdb_conn installs httpfs extension."""
@@ -88,43 +89,41 @@ class TestDataProcessor:
 
         conn.close()
 
-    def test_get_duckdb_conn_sets_credentials(self):
+    def test_get_duckdb_conn_sets_credentials(self, mocker):
         """Test that _get_duckdb_conn sets AWS credentials."""
         processor = DataProcessor(bucket="test-bucket")
 
         # Mock credentials
-        mock_creds = Mock()
-        mock_creds.get_frozen_credentials.return_value = Mock(
+        mock_frozen_creds = mocker.Mock(
             access_key="test_key", secret_key="test_secret", token="test_token"
         )
+        mock_creds = mocker.Mock()
+        mock_creds.get_frozen_credentials.return_value = mock_frozen_creds
 
-        with patch.object(
-            processor.session, "get_credentials", return_value=mock_creds
-        ):
-            conn = processor._get_duckdb_conn()
+        mocker.patch.object(processor.session, "get_credentials", return_value=mock_creds)
 
-            # Verify credentials were set (can't directly check in DuckDB)
-            # But we can verify no error was raised
-            result = conn.execute(
-                "SELECT current_setting('s3_access_key_id')"
-            ).fetchone()
-            assert result[0] == "test_key"
+        conn = processor._get_duckdb_conn()
 
-            conn.close()
+        # Verify credentials were set
+        result = conn.execute("SELECT current_setting('s3_access_key_id')").fetchone()
+        assert result[0] == "test_key"
 
-    def test_get_duckdb_conn_logs_warning_without_credentials(self):
+        conn.close()
+
+    def test_get_duckdb_conn_logs_warning_without_credentials(self, mocker):
         """Test that _get_duckdb_conn logs warning when credentials missing."""
         processor = DataProcessor(bucket="test-bucket")
 
-        with patch.object(processor.session, "get_credentials", return_value=None):
-            with patch("data_processor.logger") as mock_logger:
-                conn = processor._get_duckdb_conn()
+        mocker.patch.object(processor.session, "get_credentials", return_value=None)
+        mock_logger = mocker.patch("src.data_processor.logger")
 
-                # Should log warning about missing credentials
-                mock_logger.warning.assert_called()
-                assert "No AWS credentials" in str(mock_logger.warning.call_args)
+        conn = processor._get_duckdb_conn()
 
-                conn.close()
+        # Should log warning about missing credentials
+        mock_logger.warning.assert_called()
+        assert "No AWS credentials" in str(mock_logger.warning.call_args)
+
+        conn.close()
 
     def test_arrow_to_csv_with_header(self, sample_dataframe):
         """Test that _arrow_to_csv includes header when requested."""
@@ -274,84 +273,87 @@ class TestDataProcessor:
         assert conn is not None
         conn.close()
 
-    def test_stream_data_returns_generator(self):
+    def test_stream_data_returns_generator(self, mocker):
         """Test that stream_data returns a generator for memory efficiency."""
         processor = DataProcessor(bucket="test-bucket")
 
         # Create a mock connection
-        mock_conn = MagicMock()
-        mock_result = MagicMock()
-        mock_reader = MagicMock()
-        mock_reader.__iter__ = Mock(return_value=iter([]))
+        mock_conn = mocker.MagicMock()
+        mock_result = mocker.MagicMock()
+        mock_reader = mocker.MagicMock()
+        mock_reader.__iter__ = mocker.Mock(return_value=iter([]))
         mock_result.fetch_arrow_reader.return_value = mock_reader
         mock_conn.execute.return_value = mock_result
 
-        with patch.object(processor, "_get_duckdb_conn", return_value=mock_conn):
-            result = processor.stream_data(dataset="test", extension="csv")
+        mocker.patch.object(processor, "_get_duckdb_conn", return_value=mock_conn)
 
-            # Verify it's a generator
-            assert hasattr(result, "__iter__")
-            assert hasattr(result, "__next__")
+        result = processor.stream_data(dataset="test", extension="csv")
 
-    def test_stream_data_includes_where_clause_with_filter(self):
+        # Verify it's a generator
+        assert hasattr(result, "__iter__")
+        assert hasattr(result, "__next__")
+
+    def test_stream_data_includes_where_clause_with_filter(self, mocker):
         """Test that stream_data includes WHERE clause when filter provided."""
         processor = DataProcessor(bucket="test-bucket")
 
-        mock_conn = MagicMock()
-        mock_result = MagicMock()
-        mock_reader = MagicMock()
+        mock_conn = mocker.MagicMock()
+        mock_result = mocker.MagicMock()
+        mock_reader = mocker.MagicMock()
 
         # Create a proper schema mock
         mock_schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
         mock_reader.schema = mock_schema
-        mock_reader.__iter__ = Mock(return_value=iter([]))
+        mock_reader.__iter__ = mocker.Mock(return_value=iter([]))
 
         mock_result.fetch_record_batch.return_value = mock_reader
         mock_conn.execute.return_value = mock_result
 
-        with patch.object(processor, "_get_duckdb_conn", return_value=mock_conn):
-            list(
-                processor.stream_data(
-                    dataset="test", extension="csv", organisation_entity="org-1"
-                )
+        mocker.patch.object(processor, "_get_duckdb_conn", return_value=mock_conn)
+
+        list(
+            processor.stream_data(
+                dataset="test", extension="csv", organisation_entity="org-1"
             )
+        )
 
-            # Verify execute was called with parameterized query
-            call_args = mock_conn.execute.call_args
-            query = call_args[0][0]
-            params = call_args[0][1]
+        # Verify execute was called with parameterized query
+        call_args = mock_conn.execute.call_args
+        query = call_args[0][0]
+        params = call_args[0][1]
 
-            assert "WHERE" in query
-            assert "organisation-entity" in query
-            assert params == ["org-1"]
+        assert "WHERE" in query
+        assert "organisation-entity" in query
+        assert params == ["org-1"]
 
-    def test_stream_data_excludes_where_clause_without_filter(self):
+    def test_stream_data_excludes_where_clause_without_filter(self, mocker):
         """Test that stream_data excludes WHERE clause when no filter."""
         processor = DataProcessor(bucket="test-bucket")
 
-        mock_conn = MagicMock()
-        mock_result = MagicMock()
-        mock_reader = MagicMock()
+        mock_conn = mocker.MagicMock()
+        mock_result = mocker.MagicMock()
+        mock_reader = mocker.MagicMock()
 
         # Create a proper schema mock
         mock_schema = pa.schema([("id", pa.int64()), ("name", pa.string())])
         mock_reader.schema = mock_schema
-        mock_reader.__iter__ = Mock(return_value=iter([]))
+        mock_reader.__iter__ = mocker.Mock(return_value=iter([]))
 
         mock_result.fetch_record_batch.return_value = mock_reader
         mock_conn.execute.return_value = mock_result
 
-        with patch.object(processor, "_get_duckdb_conn", return_value=mock_conn):
-            list(
-                processor.stream_data(
-                    dataset="test", extension="csv", organisation_entity=None
-                )
+        mocker.patch.object(processor, "_get_duckdb_conn", return_value=mock_conn)
+
+        list(
+            processor.stream_data(
+                dataset="test", extension="csv", organisation_entity=None
             )
+        )
 
-            # Verify execute was called without WHERE
-            call_args = mock_conn.execute.call_args
-            query = call_args[0][0]
-            params = call_args[0][1] if len(call_args[0]) > 1 else []
+        # Verify execute was called without WHERE
+        call_args = mock_conn.execute.call_args
+        query = call_args[0][0]
+        params = call_args[0][1] if len(call_args[0]) > 1 else []
 
-            assert "WHERE" not in query
-            assert params == []
+        assert "WHERE" not in query
+        assert params == []
