@@ -12,19 +12,20 @@ env:
 
 jobs:
   detect-environments:
-    name: Detect Deployment Environments
     runs-on: ubuntu-latest
     outputs:
-      environments: ${{ steps.detect.outputs.environments }}
+      environments: ${{ steps.environments.outputs.result }}
     steps:
-      - name: Detect environments from branch
-        id: detect
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "environments=[\"staging\",\"production\"]" >> $GITHUB_OUTPUT
-          else
-            echo "environments=[\"staging\"]" >> $GITHUB_OUTPUT
-          fi
+      - uses: actions/github-script@v6
+        id: environments
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          result-encoding: json
+          script: |
+            if (context.payload?.inputs?.environment) return [context.payload?.inputs?.environment];
+            const {data: {environments}} =
+              await github.request(`GET /repos/${process.env.GITHUB_REPOSITORY}/environments`);
+            return environments.map(e => e.name)
 
   test:
     name: Test
