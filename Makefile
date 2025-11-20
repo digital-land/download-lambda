@@ -28,7 +28,7 @@ test-coverage:
 
 # Run tests for CI (with XML coverage for codecov)
 test-ci:
-	pythonnn -m pytest --cov=src --cov-report=xml --cov-report=term
+	python -m pytest --cov=src --cov-report=xml --cov-report=term
 
 lint:
 	black --check src/ tests/
