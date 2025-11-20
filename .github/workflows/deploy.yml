@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: eu-west-2
   PYTHON_VERSION: '3.11'
 
 jobs:
