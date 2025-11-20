@@ -1,4 +1,4 @@
-name: Deploy Lambda Function
+name: Publish & Deploy
 
 on:
   push:
