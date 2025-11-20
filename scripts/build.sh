@@ -25,7 +25,15 @@ cp -r "${SRC_DIR}/." "${BUILD_DIR}/"
 
 # Install dependencies
 echo "Installing dependencies..."
-pip install -r "${REQUIREMENTS_FILE}" -t "${BUILD_DIR}/" --upgrade
+pip install \
+  -r "${REQUIREMENTS_FILE}" \
+  -t "${BUILD_DIR}/" \
+  --platform manylinux2014_x86_64 \
+  --platform manylinux_2_17_x86_64 \
+  --implementation cp \
+  --python-version 3.12 \
+  --only-binary=:all: \
+  --upgrade
 
 # Remove unnecessary files to reduce package size
 echo "Cleaning up unnecessary files..."
