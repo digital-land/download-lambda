@@ -27,11 +27,11 @@ jobs:
           fi
 
   test:
-    name: Run Tests
+    name: Test
     uses: ./.github/workflows/test.yml
 
   build:
-    name: Build & Deploy (${{ matrix.environment }})
+    name: Publish & Deploy (${{ matrix.environment }})
     runs-on: ubuntu-latest
     needs: [test, detect-environments]
     strategy:
