@@ -42,9 +42,16 @@ from typing import Dict, Any, Iterator
 
 from pydantic import ValidationError
 
-from .models import RequestContext
-from .utils import parse_cloudfront_request, get_content_type, get_filename
-from .data_processor import DataProcessor
+try:
+    # Lambda environment (flat structure)
+    from models import RequestContext
+    from utils import parse_cloudfront_request, get_content_type, get_filename
+    from data_processor import DataProcessor
+except ImportError:
+    # Local/test environment (package structure)
+    from .models import RequestContext
+    from .utils import parse_cloudfront_request, get_content_type, get_filename
+    from .data_processor import DataProcessor
 
 
 # Configure logging
