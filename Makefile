@@ -1,7 +1,6 @@
 .PHONY: install test test-unit test-integration test-acceptance test-coverage lint format build deploy clean
 
 install-dev:
-	pip install -e .
 	pip install -r requirements-dev.txt
 	pre-commit install
 
@@ -23,13 +22,13 @@ test-acceptance:
 
 # Run tests with detailed coverage report
 test-coverage:
-	pytest --cov=src --cov-report=html --cov-report=term-missing
+	python -m pytest --cov=src --cov-report=html --cov-report=term-missing
 	@echo ""
 	@echo "Coverage report generated in htmlcov/index.html"
 
 # Run tests for CI (with XML coverage for codecov)
 test-ci:
-	pytest --cov=src --cov-report=xml --cov-report=term
+	python -m pytest --cov=src --cov-report=xml --cov-report=term
 
 lint:
 	black --check src/ tests/
@@ -46,4 +45,3 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-
