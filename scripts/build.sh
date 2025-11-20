@@ -28,11 +28,6 @@ echo "Installing dependencies..."
 pip install \
   -r "${REQUIREMENTS_FILE}" \
   -t "${BUILD_DIR}/" \
-  --platform manylinux2014_x86_64 \
-  --platform manylinux_2_17_x86_64 \
-  --implementation cp \
-  --python-version 3.12 \
-  --only-binary=:all: \
   --upgrade
 
 # Remove unnecessary files to reduce package size
@@ -44,6 +39,20 @@ find . -type f -name "*.pyc" -delete 2>/dev/null || true
 find . -type f -name "*.pyo" -delete 2>/dev/null || true
 find . -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
 find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+
+# Aggressive size reduction for large libraries
+echo "Removing large unnecessary files..."
+rm -rf boto3/examples 2>/dev/null || true
+rm -rf botocore/data/*/*/examples 2>/dev/null || true
+rm -rf botocore/data/*/*/paginators-1.json 2>/dev/null || true
+rm -rf botocore/data/*/*/waiters-2.json 2>/dev/null || true
+rm -rf pyarrow/include 2>/dev/null || true
+rm -rf pyarrow/*.pxd 2>/dev/null || true
+rm -rf pyarrow/tests 2>/dev/null || true
+rm -rf duckdb/tests 2>/dev/null || true
+rm -rf numpy/tests 2>/dev/null || true
+rm -rf pandas/tests 2>/dev/null || true
+find . -name "*.so" -exec strip {} \; 2>/dev/null || true
 
 # Create zip file
 echo "Creating deployment package..."
