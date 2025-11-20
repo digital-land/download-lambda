@@ -19,9 +19,10 @@ echo "Cleaning previous builds..."
 rm -rf "${BUILD_DIR}" "${DIST_DIR}"
 mkdir -p "${BUILD_DIR}" "${DIST_DIR}"
 
-# Copy source files
-echo "Copying source files..."
-cp -r "${SRC_DIR}/." "${BUILD_DIR}/"
+# Copy source files as a package
+echo "Copying source files as src package..."
+mkdir -p "${BUILD_DIR}/src"
+cp -r "${SRC_DIR}/." "${BUILD_DIR}/src/"
 
 # Install dependencies
 echo "Installing dependencies..."
@@ -72,4 +73,6 @@ echo ""
 echo "You can now deploy this package using:"
 echo "  - Terraform: terraform apply"
 echo "  - AWS CLI: aws lambda update-function-code --function-name download-lambda --zip-file fileb://dist/lambda.zip"
+echo ""
+echo "Note: Lambda handler should be configured as: src.lambda_function.lambda_handler"
 echo ""
