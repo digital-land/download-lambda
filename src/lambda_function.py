@@ -37,26 +37,47 @@ Benefits of streaming:
 import json
 import logging
 import os
+import sys
 import traceback
 from typing import Dict, Any, Iterator
 
-from pydantic import ValidationError
+# Configure logging FIRST to capture import errors
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Log import debugging info
+logger.info(f"Python version: {sys.version}")
+logger.info(f"sys.path: {sys.path}")
+logger.info(f"Current directory: {os.getcwd()}")
+logger.info(f"Directory contents: {os.listdir('.')}")
+
+from pydantic import ValidationError  # noqa: E402
 
 try:
     # Lambda environment (flat structure)
-    from models import RequestContext
-    from utils import parse_cloudfront_request, get_content_type, get_filename
-    from data_processor import DataProcessor
-except ImportError:
+    logger.info("Attempting flat imports for Lambda environment...")
+    from models import RequestContext  # noqa: E402
+    from utils import (
+        parse_cloudfront_request,
+        get_content_type,
+        get_filename,
+    )  # noqa: E402
+    from data_processor import DataProcessor  # noqa: E402
+
+    logger.info("Successfully imported using flat structure")
+except ImportError as e:
     # Local/test environment (package structure)
-    from .models import RequestContext
-    from .utils import parse_cloudfront_request, get_content_type, get_filename
-    from .data_processor import DataProcessor
+    logger.info(f"Flat import failed: {e}. Trying relative imports...")
+    logger.info(f"Full traceback: {traceback.format_exc()}")
+    from .models import RequestContext  # noqa: E402
+    from .utils import (
+        parse_cloudfront_request,
+        get_content_type,
+        get_filename,
+    )  # noqa: E402
+    from .data_processor import DataProcessor  # noqa: E402
 
-
-# Configure logging
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+    logger.info("Successfully imported using relative imports")
 
 
 def lambda_handler(event: Dict[str, Any], response_stream, _context) -> None:
