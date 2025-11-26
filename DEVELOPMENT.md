@@ -1,53 +1,55 @@
-# Development Setup
+# Local Development Guide
+
+This guide explains how to develop and test the FastAPI application locally using Docker Compose with LocalStack.
+
+## Overview
+
+The local development stack includes:
+- **LocalStack** - Mock AWS services (S3) for local testing
+- **FastAPI Application** - Your application with hot-reload enabled
+- **Test Data** - Automatically generated Parquet files in S3
+
+## Prerequisites
+
+- Docker Desktop (or Docker + Docker Compose)
+- Make (optional, for convenient commands)
 
 ## Quick Start
 
-1. **Install development dependencies:**
-   ```bash
-   make install-dev
-   ```
+### 1. Start the Development Environment
 
-   This will:
-   - Install the `src/` package in editable mode (allows imports without `sys.path` hacks)
-   - Install all development dependencies (pytest, flake8, black, mypy, etc.)
-
-2. **Run tests:**
-   ```bash
-   make test           # Run all tests
-   make test-unit      # Run only unit tests
-   make lint           # Run linting checks
-   make format         # Auto-format code
-   ```
-
-## Project Structure
-
-The project uses `pyproject.toml` for modern Python packaging:
-- Source code is in `src/`
-- Tests import directly from `src/` (no `sys.path` manipulation needed)
-- Install with `pip install -e .` for development
-
-## Why Editable Install?
-
-Installing the package in editable mode (`pip install -e .`) allows:
-- ✅ Clean imports: `from lambda_function import ...`
-- ✅ No `sys.path.insert()` hacks
-- ✅ IDE auto-completion works properly
-- ✅ Flake8 doesn't complain about import errors
-- ✅ Tests run the same way in dev and CI
-
-## Linting
-
-The project uses:
-- **Flake8**: Python code linter (style and errors)
-- **Black**: Code formatter (auto-fixes formatting)
-- **MyPy**: Static type checker
-
-Run all checks:
 ```bash
-make lint
+# Start all services
+docker-compose up
+
+# Or run in background
+docker-compose up -d
+
+# View logs
+docker-compose logs -f app
 ```
 
-Auto-fix formatting issues:
+This will:
+1. Start LocalStack with S3
+2. Create a `test-datasets` bucket
+3. Generate and upload 3 test Parquet files
+4. Start the FastAPI application on http://localhost:8000
+
+### 2. Test the API
+
 ```bash
-make format
+# Health check
+curl http://localhost:8000/health
+
+# API documentation (interactive)
+open http://localhost:8000/docs
+
+# Download test dataset as CSV
+curl http://localhost:8000/test-dataset.csv
+
+# Download with filtering
+curl "http://localhost:8000/test-dataset.csv?organisation-entity=org-1"
+
+# Download as JSON
+curl http://localhost:8000/sales-data.json
 ```

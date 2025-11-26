@@ -9,12 +9,12 @@ import os
 import time
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, Any
 
 import pandas as pd
 import pytest
 import boto3
 from moto.server import ThreadedMotoServer
+from fastapi.testclient import TestClient
 
 
 # ============================================================================
@@ -28,20 +28,16 @@ def project_root() -> Path:
     return Path(__file__).parent.parent
 
 
-@pytest.fixture(scope="session")
-def src_path(project_root: Path) -> Path:
-    """Return the src directory path."""
-    return project_root / "src"
-
-
 @pytest.fixture(scope="function")
 def mock_env_vars(monkeypatch):
-    """Set up mock environment variables for Lambda."""
-    # Set environment variables BEFORE importing lambda_function
+    """Set up mock environment variables for the application."""
     monkeypatch.setenv("DATASET_BUCKET", "test-bucket")
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://localhost:5000")
+    monkeypatch.setenv("ENVIRONMENT", "test")
 
     return {
         "DATASET_BUCKET": "test-bucket",
+        "AWS_ENDPOINT_URL": "http://localhost:5000",
     }
 
 
@@ -118,7 +114,7 @@ def aws_credentials(monkeypatch):
 
 
 @pytest.fixture(scope="function")
-def s3_mock(aws_credentials, moto_server, monkeypatch):
+def s3_mock(aws_credentials, moto_server):
     """
     Create a mock S3 service that works with both boto3 and DuckDB.
 
@@ -132,10 +128,6 @@ def s3_mock(aws_credentials, moto_server, monkeypatch):
         aws_access_key_id="testing",
         aws_secret_access_key="testing",
     )
-
-    # Configure DuckDB to use the moto server
-    monkeypatch.setenv("S3_ENDPOINT", "localhost:5000")
-    monkeypatch.setenv("S3_USE_SSL", "false")
 
     yield s3_client
 
@@ -169,100 +161,22 @@ def s3_bucket_with_data(s3_mock, sample_parquet_bytes) -> str:
 
 
 # ============================================================================
-# Lambda Event Fixtures
+# FastAPI Test Client Fixtures
 # ============================================================================
 
 
-@pytest.fixture(scope="session")
-def lambda_function_url_event() -> Dict[str, Any]:
-    """Sample Lambda Function URL event."""
-    return {
-        "version": "2.0",
-        "routeKey": "$default",
-        "rawPath": "/test-dataset.csv",
-        "rawQueryString": "organisation-entity=org-1",
-        "headers": {
-            "accept": "text/csv",
-            "user-agent": "test-agent",
-        },
-        "requestContext": {
-            "accountId": "123456789012",
-            "apiId": "test-api",
-            "domainName": "test.execute-api.us-east-1.amazonaws.com",
-            "http": {
-                "method": "GET",
-                "path": "/test-dataset.csv",
-                "protocol": "HTTP/1.1",
-                "sourceIp": "127.0.0.1",
-                "userAgent": "test-agent",
-            },
-            "requestId": "test-request-id",
-            "routeKey": "$default",
-            "stage": "$default",
-            "time": "01/Jan/2024:00:00:00 +0000",
-            "timeEpoch": 1704067200000,
-        },
-    }
-
-
-@pytest.fixture(scope="session")
-def cloudfront_event() -> Dict[str, Any]:
-    """Sample CloudFront Lambda@Edge event."""
-    return {
-        "Records": [
-            {
-                "cf": {
-                    "request": {
-                        "uri": "/test-dataset.json",
-                        "querystring": "organisation-entity=org-2",
-                        "headers": {
-                            "host": [
-                                {
-                                    "key": "Host",
-                                    "value": "d123.cloudfront.net",
-                                }
-                            ],
-                        },
-                        "method": "GET",
-                    }
-                }
-            }
-        ]
-    }
-
-
 @pytest.fixture(scope="function")
-def lambda_function_url_event_factory():
+def client(mock_env_vars, s3_bucket_with_data):
     """
-    Factory for creating Lambda Function URL events with custom parameters.
+    Create a FastAPI test client with mocked S3.
 
-    Usage:
-        event = lambda_function_url_event_factory(
-            path="/dataset.csv",
-            query="filter=value"
-        )
+    This fixture automatically sets up the environment and S3 bucket
+    before creating the app, ensuring clean imports.
     """
+    # Import app after environment is configured
+    from application.main import app
 
-    def _create_event(
-        path: str = "/test-dataset.csv",
-        query: str = "",
-        method: str = "GET",
-    ) -> Dict[str, Any]:
-        return {
-            "version": "2.0",
-            "routeKey": "$default",
-            "rawPath": path,
-            "rawQueryString": query,
-            "headers": {},
-            "requestContext": {
-                "http": {
-                    "method": method,
-                    "path": path,
-                },
-            },
-        }
-
-    return _create_event
+    return TestClient(app)
 
 
 # ============================================================================

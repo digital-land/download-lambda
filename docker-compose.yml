@@ -1,0 +1,52 @@
+services:
+  # LocalStack - provides local AWS services (S3)
+  localstack:
+    image: localstack/localstack:3.0
+    container_name: download-lambda-localstack
+    ports:
+      - "4566:4566"  # LocalStack gateway
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - AWS_DEFAULT_REGION=eu-west-2
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - "./docker/localstack:/etc/localstack/init/ready.d"
+      - "./docker/test-data:/etc/localstack/init/ready.d/test-data"
+    networks:
+      - download-lambda-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI application
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: download-lambda-app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATASET_BUCKET=test-datasets
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - AWS_DEFAULT_REGION=eu-west-2
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - ENVIRONMENT=development
+      - LOG_LEVEL=info
+    volumes:
+      - "./application:/app/application"
+    depends_on:
+      localstack:
+        condition: service_healthy
+    networks:
+      - download-lambda-network
+    command: uvicorn application.main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  download-lambda-network:
+    driver: bridge

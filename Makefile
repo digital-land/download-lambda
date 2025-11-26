@@ -1,6 +1,6 @@
-.PHONY: install test test-unit test-integration test-acceptance test-coverage lint format build deploy clean
+.PHONY: init test test-unit test-integration test-acceptance test-coverage lint format build deploy clean dev-up dev-down dev-logs dev-restart dev-rebuild dev-gen-data dev-clean
 
-install-dev:
+init:
 	pip install -r requirements-dev.txt
 	pre-commit install
 
@@ -31,14 +31,67 @@ test-ci:
 	python -m pytest --cov=src --cov-report=xml --cov-report=term
 
 lint:
-	black --check src/ tests/
-	flake8 src/ tests/
+	black --check application/ tests/
+	flake8 application/ tests/
 
 format:
-	black src/ tests/
+	black application/ tests/
 
 build:
 	./scripts/build.sh
+
+# Docker Compose targets for local development
+dev-gen-data:
+	@echo "Generating test Parquet data..."
+	@if [ -d ".venv" ]; then \
+		.venv/bin/python docker/localstack/generate_test_data.py; \
+	else \
+		python3 docker/localstack/generate_test_data.py || ( \
+			echo ""; \
+			echo "⚠️  PyArrow not installed. Install with: pip install -r requirements.txt"; \
+			exit 1 \
+		); \
+	fi
+	@echo ""
+	@echo "✓ Test data generated in docker/test-data/"
+
+dev-up:
+	docker-compose up -d
+	@echo ""
+	@echo "✅ Local development stack started!"
+	@echo "📦 LocalStack S3: http://localhost:4566"
+	@echo "🚀 FastAPI app: http://localhost:8000"
+	@echo "📖 API docs: http://localhost:8000/docs"
+	@echo ""
+	@echo "Test with: curl http://localhost:8000/test-dataset.csv"
+
+dev-down:
+	docker-compose down
+
+dev-logs:
+	docker-compose logs -f
+
+dev-restart:
+	docker-compose restart app
+
+dev-rebuild:
+	docker-compose down
+	docker-compose build --no-cache
+	docker-compose up -d
+	@echo ""
+	@echo "✅ Development stack rebuilt and started!"
+
+dev-clean:
+	@echo "🧹 Cleaning up Docker resources..."
+	docker-compose down -v --remove-orphans
+	@echo "Removing download-lambda images..."
+	@docker images | grep download-lambda | awk '{print $$3}' | xargs -r docker rmi -f 2>/dev/null || true
+	@echo "Removing dangling images..."
+	@docker image prune -f
+	@echo ""
+	@echo "✅ Docker cleanup complete!"
+	@echo ""
+	@echo "To rebuild from scratch, run: make dev-rebuild"
 
 clean:
 	rm -rf build/ dist/ htmlcov/ .coverage .pytest_cache/

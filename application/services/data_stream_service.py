@@ -1,7 +1,7 @@
 """
-DuckDB-based data processor for efficient S3 Parquet streaming.
+Data Stream Service for efficient Parquet data streaming.
 
-This processor uses DuckDB for optimal performance:
+Uses DuckDB for optimal performance:
 - Reading Parquet files directly from S3 without full download
 - Pushing filters down to Parquet metadata level
 - Streaming Arrow RecordBatches without pandas conversion
@@ -19,50 +19,34 @@ import logging
 import os
 from typing import Optional, Generator
 
-import boto3
 import duckdb
 import pyarrow as pa
 import pyarrow.csv as csv
 import pyarrow.parquet as pq
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+from application.services.s3_service import S3Service
+
+logger = logging.getLogger(__name__)
 
 
-class DataProcessor:
+class DataStreamService:
     """
-    Handles reading Parquet files from S3 using DuckDB for maximum efficiency.
+    Service for streaming data from S3 Parquet files using DuckDB.
 
-    This processor uses DuckDB's httpfs extension to read Parquet files
+    This service uses DuckDB's httpfs extension to read Parquet files
     directly from S3, applying filters at the Parquet metadata level for
     optimal performance.
     """
 
-    def __init__(self, bucket: str, prefix: str = ""):
+    def __init__(self, s3_service: S3Service):
         """
-        Initialize the DuckDB data processor.
+        Initialize the data stream service.
 
         Args:
-            bucket: S3 bucket name containing the datasets
-            prefix: Optional S3 key prefix (folder path) for datasets.
-                   Should not include leading slash. Should end without trailing slash.
-                   Examples:
-                   - "" (empty) → s3://bucket/dataset.parquet
-                   - "data" → s3://bucket/data/dataset.parquet
-                   - "prod/parquet" → s3://bucket/prod/parquet/dataset.parquet
+            s3_service: S3 service instance for bucket/credential access
         """
-        self.bucket = bucket
-        self.prefix = prefix.strip("/") if prefix else ""  # Normalize prefix
-        self.s3_client = boto3.client("s3")
-        self.session = boto3.Session()
-        self.region = self.session.region_name or "us-east-1"
-
-        if self.prefix:
-            logger.info(
-                f"Initialized DuckDB processor for s3://{bucket}/{self.prefix}/"
-            )
-        else:
-            logger.info(f"Initialized DuckDB processor for s3://{bucket}/")
+        self.s3_service = s3_service
+        logger.info(f"Initialized DataStreamService for bucket '{s3_service.bucket}'")
 
     def stream_data(
         self,
@@ -72,7 +56,7 @@ class DataProcessor:
         chunk_size: int = 10000,
     ) -> Generator[bytes, None, None]:
         """
-        Stream data from S3 Parquet file with optional organisation filtering using DuckDB.
+        Stream data from S3 Parquet file with optional filtering using DuckDB.
 
         DuckDB provides significant advantages:
         - Only reads necessary Parquet row groups from S3
@@ -93,58 +77,48 @@ class DataProcessor:
             FileNotFoundError: If dataset not found in S3
             Exception: If processing fails
         """
-        logger.info(f"DuckDB streaming {dataset} from {self.bucket} as {extension}")
+        logger.info(f"Streaming {dataset} from {self.s3_service.bucket} as {extension}")
 
         conn = None
         try:
             # Get configured DuckDB connection
             conn = self._get_duckdb_conn()
 
-            # Build S3 path from bucket, prefix, and dataset
-            if self.prefix:
-                s3_path = f"s3://{self.bucket}/{self.prefix}/{dataset}.parquet"
-            else:
-                s3_path = f"s3://{self.bucket}/{dataset}.parquet"
-            logger.debug(f"Reading from S3: {s3_path}")
+            # Build S3 URI
+            s3_uri = self.s3_service.get_s3_uri(dataset)
 
-            # Build query with optional organisation filter
-            # DuckDB will push this filter down to Parquet metadata level
+            # Build query with optional filter
             if organisation_entity:
                 query = f"""
-                    SELECT * FROM read_parquet('{s3_path}')
+                    SELECT * FROM read_parquet('{s3_uri}')
                     WHERE "organisation-entity" = ?
                 """
                 params = [organisation_entity]
                 logger.info(
-                    f"Applying filter: organisation-entity = {organisation_entity} (pushed to Parquet level)"
+                    f"Streaming with filter: organisation-entity={organisation_entity}"
                 )
             else:
-                query = f"SELECT * FROM read_parquet('{s3_path}')"
+                query = f"SELECT * FROM read_parquet('{s3_uri}')"
                 params = []
-                logger.info("No filter applied - reading full dataset")
+                logger.info("Streaming without filters")
 
-            # Execute query and get Arrow RecordBatch reader for streaming
-            # fetch_record_batch returns a pyarrow.RecordBatchReader for efficient streaming
+            # Execute query and fetch Arrow record batch reader
             result = conn.execute(query, params)
-            arrow_reader = result.fetch_record_batch(chunk_size)
+            reader = result.fetch_record_batch(chunk_size)
 
-            # Stream results batch by batch
+            # Get schema for handling empty results
+            schema = reader.schema if hasattr(reader, "schema") else None
+
+            # Stream data in chunks
             first_chunk = True
             batch_count = 0
             total_rows = 0
 
-            # Get schema from reader (available even if no rows)
-            schema = arrow_reader.schema
-
-            for batch in arrow_reader:
-                # batch is a PyArrow RecordBatch - already in Arrow format!
-                if batch.num_rows == 0:
-                    continue
-
+            for batch in reader:
                 batch_count += 1
-                total_rows += batch.num_rows
+                total_rows += len(batch)
 
-                # Convert to requested format
+                # Convert batch to requested format
                 if extension == "csv":
                     yield from self._arrow_to_csv(batch, include_header=first_chunk)
 
@@ -215,7 +189,7 @@ class DataProcessor:
         Get a configured DuckDB connection with S3 access.
 
         Creates an in-memory DuckDB connection, installs the httpfs extension,
-        and configures S3 credentials from the boto3 session. This allows
+        and configures S3 credentials from the S3 service. This allows
         DuckDB to read directly from S3.
 
         Returns:
@@ -230,127 +204,111 @@ class DataProcessor:
             conn.execute("LOAD httpfs;")
 
             # Configure S3 region
-            conn.execute(f"SET s3_region='{self.region}';")
+            conn.execute(f"SET s3_region='{self.s3_service.region}';")
 
-            # Check for custom S3 endpoint (for testing with moto server)
-            s3_endpoint = os.environ.get("S3_ENDPOINT")
-            if s3_endpoint:
-                conn.execute(f"SET s3_endpoint='{s3_endpoint}';")
-                logger.info(f"Using custom S3 endpoint: {s3_endpoint}")
+            # Check for custom S3 endpoint (for LocalStack, moto, etc.)
+            if self.s3_service.endpoint_url:
+                # DuckDB expects endpoint without protocol (just host:port)
+                endpoint = self.s3_service.endpoint_url.replace("http://", "").replace(
+                    "https://", ""
+                )
+                conn.execute(f"SET s3_endpoint='{endpoint}';")
+                logger.info(f"Using custom S3 endpoint: {endpoint}")
 
-            # Check for SSL configuration (testing may use HTTP)
-            s3_use_ssl = os.environ.get("S3_USE_SSL", "true").lower()
-            conn.execute(
-                f"SET s3_use_ssl={'true' if s3_use_ssl == 'true' else 'false'};"
-            )
+                # Disable SSL for HTTP endpoints
+                if self.s3_service.endpoint_url.startswith("http://"):
+                    conn.execute("SET s3_use_ssl=false;")
+                    logger.info("Disabled SSL for HTTP endpoint")
 
-            # For custom endpoints, we may need path-style addressing
-            if s3_endpoint:
+                # Use path-style addressing for custom endpoints
                 conn.execute("SET s3_url_style='path';")
+            else:
+                # Check for SSL configuration (only for non-custom endpoints)
+                s3_use_ssl = os.environ.get("S3_USE_SSL", "true").lower()
+                conn.execute(
+                    f"SET s3_use_ssl={'true' if s3_use_ssl == 'true' else 'false'};"
+                )
 
-            # Get credentials from boto3 session
-            # This respects IAM roles, environment variables, and credential files
-            credentials = self.session.get_credentials()
+            # Get credentials from S3 service
+            credentials = self.s3_service.get_credentials()
 
             if credentials:
-                # Frozen credentials for thread safety
-                frozen_creds = credentials.get_frozen_credentials()
+                conn.execute(f"SET s3_access_key_id='{credentials['access_key']}';")
+                conn.execute(f"SET s3_secret_access_key='{credentials['secret_key']}';")
 
-                conn.execute(f"SET s3_access_key_id='{frozen_creds.access_key}';")
-                conn.execute(f"SET s3_secret_access_key='{frozen_creds.secret_key}';")
-
-                # Set session token if present (for IAM role credentials)
-                if frozen_creds.token:
-                    conn.execute(f"SET s3_session_token='{frozen_creds.token}';")
-
-                logger.debug("Configured DuckDB S3 access with AWS credentials")
+                # Set session token if available (for temporary credentials)
+                if credentials.get("token"):
+                    conn.execute(f"SET s3_session_token='{credentials['token']}';")
             else:
-                logger.warning(
-                    "No AWS credentials found - S3 access may fail. "
-                    "Ensure IAM role or credentials are configured."
-                )
+                logger.warning("No AWS credentials found - S3 access may fail")
 
             return conn
 
-        except duckdb.Error as e:
-            logger.error(f"Failed to configure DuckDB S3 access: {e}")
-            raise Exception(f"DuckDB S3 configuration error: {str(e)}") from e
+        except Exception as e:
+            logger.error(f"Failed to configure DuckDB connection: {e}")
+            raise
 
     def _arrow_to_csv(
-        self, batch: pa.RecordBatch, include_header: bool = True
+        self, batch: pa.RecordBatch, include_header: bool = False
     ) -> Generator[bytes, None, None]:
         """
         Convert Arrow RecordBatch to CSV format.
 
-        Uses PyArrow's native CSV writer - no pandas conversion needed!
-
         Args:
-            batch: PyArrow RecordBatch
+            batch: Arrow RecordBatch to convert
             include_header: Whether to include column headers
 
         Yields:
             CSV data as bytes
         """
-        buffer = io.BytesIO()
-
-        # PyArrow can write CSV directly from RecordBatch
-        # Disable quoting for non-string fields to match expected output
-        write_options = csv.WriteOptions(
-            include_header=include_header,
-            quoting_style="needed",  # Only quote when necessary (e.g., commas in strings)
-        )
-        csv.write_csv(batch, buffer, write_options=write_options)
-
-        buffer.seek(0)
-        yield buffer.read()
+        output = io.BytesIO()
+        write_options = csv.WriteOptions(include_header=include_header)
+        csv.write_csv(batch, output, write_options=write_options)
+        yield output.getvalue()
 
     def _arrow_to_json(
-        self, batch: pa.RecordBatch, first_chunk: bool = True
+        self, batch: pa.RecordBatch, first_chunk: bool = False
     ) -> Generator[bytes, None, None]:
         """
         Convert Arrow RecordBatch to JSON format.
 
-        Creates a JSON array with each record as an object.
+        Yields JSON objects in a streaming array format.
 
         Args:
-            batch: PyArrow RecordBatch
-            first_chunk: Whether this is the first chunk (for array opening)
+            batch: Arrow RecordBatch to convert
+            first_chunk: Whether this is the first chunk (starts JSON array)
 
         Yields:
             JSON data as bytes
         """
+        # Convert batch to Python dict
+        table = pa.Table.from_batches([batch])
+        records = table.to_pylist()
+
         if first_chunk:
             yield b"[\n"
+            prefix = ""
         else:
-            yield b",\n"
+            prefix = ",\n"
 
-        # Convert to Python dicts efficiently using Arrow's to_pylist()
-        records = batch.to_pylist()
         for i, record in enumerate(records):
             if i > 0:
                 yield b",\n"
-            yield json.dumps(record, default=str).encode("utf-8")
+            else:
+                yield prefix.encode()
+            yield json.dumps(record).encode()
 
     def _arrow_to_parquet(self, batch: pa.RecordBatch) -> Generator[bytes, None, None]:
         """
         Convert Arrow RecordBatch to Parquet format.
 
-        Note: Each batch is written as a complete Parquet file.
-        For true streaming Parquet, consider using Parquet's streaming writer.
-
         Args:
-            batch: PyArrow RecordBatch
+            batch: Arrow RecordBatch to convert
 
         Yields:
             Parquet data as bytes
         """
-        buffer = io.BytesIO()
-
-        # Create table from batch
+        output = io.BytesIO()
         table = pa.Table.from_batches([batch])
-
-        # Write as Parquet
-        pq.write_table(table, buffer)
-
-        buffer.seek(0)
-        yield buffer.read()
+        pq.write_table(table, output, compression="snappy")
+        yield output.getvalue()

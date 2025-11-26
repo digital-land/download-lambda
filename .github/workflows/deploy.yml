@@ -32,7 +32,7 @@ jobs:
     uses: ./.github/workflows/test.yml
 
   build:
-    name: Publish & Deploy (${{ matrix.environment }})
+    name: Build & Deploy (${{ matrix.environment }})
     runs-on: ubuntu-latest
     needs: [test, detect-environments]
     strategy:
@@ -43,44 +43,63 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Set up AWS credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.DEPLOY_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.DEPLOY_AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build Lambda package
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ matrix.environment }}-download-lambda
+          IMAGE_TAG: ${{ github.sha }}
         run: |
-          chmod +x scripts/build.sh
-          ./scripts/build.sh
+          docker build \
+            --platform linux/amd64 \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
+            .
 
-      - name: Create Lambda archive
-        run: |
-          cp dist/lambda.zip lambda-${{ matrix.environment }}.zip
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Upload Lambda package to S3
-        id: upload
-        run: |
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          S3_KEY=lambda-builds/${{ matrix.environment }}/lambda-${TIMESTAMP}.zip
-          aws s3 cp lambda-${{ matrix.environment }}.zip s3://${{ matrix.environment }}-download-lambda-deployments/${S3_KEY}
-          echo "s3_key=${S3_KEY}" >> $GITHUB_OUTPUT
+          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Upload Lambda artifact for deployment job
-        uses: actions/upload-artifact@v4
-        with:
-          name: lambda-${{ matrix.environment }}
-          path: lambda-${{ matrix.environment }}.zip
-
-      - name: Deploy AWS Lambda function
+      - name: Update Lambda function
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ matrix.environment }}-download-lambda
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           aws lambda update-function-code \
             --function-name ${{ matrix.environment }}-download-lambda \
-            --s3-bucket ${{ matrix.environment }}-download-lambda-deployments \
-            --s3-key ${{ steps.upload.outputs.s3_key }}
+            --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Wait for Lambda update to complete
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ matrix.environment }}-download-lambda
+
+      - name: Deployment Summary
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ matrix.environment }}-download-lambda
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "## Deployment Summary - ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Docker image built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Lambda function updated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Function:** \`${{ matrix.environment }}-download-lambda\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
