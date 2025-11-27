@@ -124,6 +124,6 @@ jobs:
           echo "✅ Docker image built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
           echo "✅ Lambda function updated" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`${{ steps.build-and-publish.outputs.image_uri }}`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ steps.build-and-publish.outputs.image_uri }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Function:** \`${{ matrix.environment }}-download-lambda\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

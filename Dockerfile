@@ -14,8 +14,12 @@ ENV AWS_LWA_INVOKE_MODE=response_stream
 ENV AWS_LWA_READINESS_CHECK_PORT=8000
 ENV AWS_LWA_READINESS_CHECK_PATH=/health
 
+# Ensure Python can find packages installed in LAMBDA_TASK_ROOT
+ENV PYTHONPATH="${LAMBDA_TASK_ROOT}:${PYTHONPATH}"
+
 # Create a startup script for uvicorn
-RUN printf '#!/bin/sh\nexec uvicorn application.main:app --host 0.0.0.0 --port 8000 --log-level info\n' > /lambda-entrypoint.sh && \
+# Use python -m to run uvicorn as a module instead of calling it directly
+RUN printf '#!/bin/sh\nexec python -m uvicorn application.main:app --host 0.0.0.0 --port 8000 --log-level info\n' > /lambda-entrypoint.sh && \
     chmod +x /lambda-entrypoint.sh
 
 # Copy requirements file
