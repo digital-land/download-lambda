@@ -44,7 +44,7 @@ class TestS3ServiceInitialization:
 
             assert service.region == "eu-west-2"
 
-    def test_initialize_defaults_to_us_east_1_without_region(self):
+    def test_initialize_defaults_to_eu_west_2_without_region(self):
         """Test defaults to us-east-1 when no region configured."""
         mock_session = Mock()
         mock_session.region_name = None
@@ -52,7 +52,7 @@ class TestS3ServiceInitialization:
         with patch("boto3.Session", return_value=mock_session):
             service = S3Service(bucket="test-bucket")
 
-            assert service.region == "us-east-1"
+            assert service.region == "eu-west-2"
 
     def test_initialize_reads_endpoint_from_environment(self, monkeypatch):
         """Test endpoint URL read from AWS_ENDPOINT_URL environment variable."""
