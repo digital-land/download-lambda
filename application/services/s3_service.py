@@ -37,7 +37,7 @@ class S3Service:
         self.bucket = bucket
         self.prefix = prefix.strip("/") if prefix else ""
         self.session = boto3.Session()
-        self.region = self.session.region_name or "us-east-1"
+        self.region = self.session.region_name or "eu-west-2"
 
         # Support custom S3 endpoint (for LocalStack, moto, etc.)
         self.endpoint_url = os.environ.get("AWS_ENDPOINT_URL") or os.environ.get(
@@ -121,7 +121,12 @@ class S3Service:
         """
         try:
             key = self.get_object_path(dataset)
+            s3_uri = f"s3://{self.bucket}/{key}"
+            logger.info(f"Checking if dataset exists: {s3_uri}")
             self.client.head_object(Bucket=self.bucket, Key=key)
+            logger.info(f"Dataset found: {s3_uri}")
             return True
-        except Exception:
+        except Exception as e:
+            s3_uri = f"s3://{self.bucket}/{self.get_object_path(dataset)}"
+            logger.warning(f"Dataset not found: {s3_uri} - {type(e).__name__}: {e}")
             return False
