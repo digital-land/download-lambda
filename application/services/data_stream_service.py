@@ -199,6 +199,10 @@ class DataStreamService:
             # Create DuckDB connection (in-memory, lightweight)
             conn = duckdb.connect(database=":memory:")
 
+            # Set home directory for DuckDB (Lambda needs /tmp for writes)
+            # This is needed for extension installation
+            conn.execute("SET home_directory='/tmp/duckdb';")
+
             # Install and load httpfs extension for S3 access
             conn.execute("INSTALL httpfs;")
             conn.execute("LOAD httpfs;")

@@ -90,6 +90,18 @@ async def download_dataset(
                 status_code=404, detail=f"Dataset '{dataset}' not found"
             )
 
+        # Test DuckDB connection before starting stream
+        # This ensures any configuration errors are caught early
+        try:
+            test_conn = data_stream_service._get_duckdb_conn()
+            test_conn.close()
+        except Exception as e:
+            logger.error(f"Failed to initialize DuckDB connection: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail="Server error: Unable to initialize data processing engine",
+            )
+
         # Get response metadata
         filename = get_filename(dataset, extension)
         content_type = get_content_type(extension)
@@ -116,6 +128,13 @@ async def download_dataset(
     except HTTPException:
         # Re-raise HTTPException as-is (already has correct status code)
         raise
+
+    except PermissionError as e:
+        logger.error(f"S3 permission error for dataset {dataset}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Server configuration error: Lambda function does not have permission to access S3 bucket",
+        )
 
     except FileNotFoundError as e:
         logger.error(f"Dataset not found: {dataset} - {e}")
