@@ -14,6 +14,10 @@ ENV AWS_LWA_INVOKE_MODE=response_stream
 ENV AWS_LWA_READINESS_CHECK_PORT=8000
 ENV AWS_LWA_READINESS_CHECK_PATH=/health
 
+# Create a startup script for uvicorn
+RUN printf '#!/bin/sh\nexec uvicorn application.main:app --host 0.0.0.0 --port 8000 --log-level info\n' > /lambda-entrypoint.sh && \
+    chmod +x /lambda-entrypoint.sh
+
 # Copy requirements file
 COPY requirements.txt ${LAMBDA_TASK_ROOT}/
 
@@ -27,6 +31,6 @@ COPY application/ ${LAMBDA_TASK_ROOT}/application/
 # Set working directory
 WORKDIR ${LAMBDA_TASK_ROOT}
 
-# The Lambda Web Adapter will start uvicorn automatically
-# CMD specifies the command to run the FastAPI application
-CMD ["uvicorn", "application.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
+# The Lambda Web Adapter will execute the startup script
+# Use the startup script as the handler
+CMD ["/lambda-entrypoint.sh"]
