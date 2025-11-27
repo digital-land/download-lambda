@@ -15,7 +15,7 @@ ENV AWS_LWA_READINESS_CHECK_PORT=8000
 ENV AWS_LWA_READINESS_CHECK_PATH=/health
 
 # Ensure Python can find packages installed in LAMBDA_TASK_ROOT
-ENV PYTHONPATH="${LAMBDA_TASK_ROOT}:${PYTHONPATH}"
+# ENV PYTHONPATH="${LAMBDA_TASK_ROOT}:${PYTHONPATH}"
 
 # Create a startup script for uvicorn
 # Use python -m to run uvicorn as a module instead of calling it directly
