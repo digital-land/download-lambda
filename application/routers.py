@@ -107,15 +107,23 @@ async def download_dataset(
         content_type = get_content_type(extension)
 
         # Stream data from service
-        data_generator = data_stream_service.stream_data(
-            dataset=dataset,
-            extension=extension,
-            organisation_entity=organisation_entity,
-        )
+        # Wrap generator to ensure proper completion for Lambda Web Adapter
+        async def stream_wrapper():
+            """Wrapper to ensure generator completes properly with Lambda Web Adapter."""
+            try:
+                for chunk in data_stream_service.stream_data(
+                    dataset=dataset,
+                    extension=extension,
+                    organisation_entity=organisation_entity,
+                ):
+                    yield chunk
+            except Exception as e:
+                logger.error(f"Error during streaming: {e}", exc_info=True)
+                raise
 
         # Return streaming response
         return StreamingResponse(
-            data_generator,
+            stream_wrapper(),
             media_type=content_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',

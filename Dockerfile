@@ -19,7 +19,8 @@ ENV AWS_LWA_READINESS_CHECK_PATH=/health
 
 # Create a startup script for uvicorn
 # Use python -m to run uvicorn as a module instead of calling it directly
-RUN printf '#!/bin/sh\nexec python -m uvicorn application.main:app --host 0.0.0.0 --port 8000 --log-level info\n' > /lambda-entrypoint.sh && \
+# Add --timeout-keep-alive 0 to prevent connection closure during streaming
+RUN printf '#!/bin/sh\nexec python -m uvicorn application.main:app --host 0.0.0.0 --port 8000 --log-level info --timeout-keep-alive 0 --timeout-graceful-shutdown 300\n' > /lambda-entrypoint.sh && \
     chmod +x /lambda-entrypoint.sh
 
 # Copy requirements file
