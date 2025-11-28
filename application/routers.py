@@ -108,8 +108,16 @@ async def download_dataset(
 
         # Stream data from service
         # Wrap generator to ensure proper completion for Lambda Web Adapter
+        # Add explicit async yields to allow Lambda runtime to process chunks
+        # Track completion status for headers
+        stream_status = {"complete": True, "reason": None}
+
         async def stream_wrapper():
             """Wrapper to ensure generator completes properly with Lambda Web Adapter."""
+            import asyncio
+
+            chunk_count = 0
+            total_bytes = 0
             try:
                 for chunk in data_stream_service.stream_data(
                     dataset=dataset,
@@ -117,9 +125,55 @@ async def download_dataset(
                     organisation_entity=organisation_entity,
                 ):
                     yield chunk
+                    chunk_count += 1
+                    total_bytes += len(chunk)
+                    # Give the Lambda runtime a chance to send data every 10 chunks
+                    if chunk_count % 10 == 0:
+                        await asyncio.sleep(0)
+
+            except (TimeoutError, asyncio.TimeoutError):
+                stream_status["complete"] = False
+                stream_status["reason"] = "timeout"
+                logger.warning(
+                    f"Timeout during streaming after {chunk_count} chunks ({total_bytes} bytes). "
+                    f"Dataset: {dataset}, Filter: {organisation_entity}"
+                )
+                # For JSON, close the array gracefully
+                if extension == "json":
+                    yield b"\n]"
+                # For CSV/Parquet, partial data is already valid
+                logger.info(
+                    f"Gracefully closed stream after timeout: {chunk_count} chunks sent"
+                )
+
+            except asyncio.CancelledError:
+                stream_status["complete"] = False
+                stream_status["reason"] = "cancelled"
+                logger.warning(
+                    f"Request cancelled during streaming after {chunk_count} chunks ({total_bytes} bytes). "
+                    f"Dataset: {dataset}, Filter: {organisation_entity}"
+                )
+                # For JSON, close the array gracefully
+                if extension == "json":
+                    yield b"\n]"
+                logger.info(
+                    f"Gracefully closed stream after cancellation: {chunk_count} chunks sent"
+                )
+
             except Exception as e:
-                logger.error(f"Error during streaming: {e}", exc_info=True)
+                stream_status["complete"] = False
+                stream_status["reason"] = "error"
+                logger.error(
+                    f"Error during streaming after {chunk_count} chunks ({total_bytes} bytes): {e}",
+                    exc_info=True,
+                )
                 raise
+
+            finally:
+                logger.info(
+                    f"Stream wrapper completed: {chunk_count} chunks, {total_bytes} bytes, "
+                    f"complete={stream_status['complete']}, reason={stream_status['reason']}"
+                )
 
         # Return streaming response
         return StreamingResponse(

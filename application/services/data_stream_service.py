@@ -12,7 +12,7 @@ Memory optimizations:
 - Configurable DuckDB memory limit via DUCKDB_MEMORY_LIMIT env var
 - Row-by-row JSON conversion (no intermediate Table/list copies)
 - Direct RecordBatch to Parquet writing (no Table intermediate)
-- Reduced chunk size (5000 rows default) for lower peak memory
+- Reduced chunk size (2000 rows default) for lower peak memory and faster streaming
 - Single-threaded operation for Lambda environments
 - httpfs extension pre-installed at build time (saves ~40-50MB runtime memory)
 
@@ -64,7 +64,7 @@ class DataStreamService:
         dataset: str,
         extension: str,
         organisation_entity: Optional[str] = None,
-        chunk_size: int = 5000,
+        chunk_size: int = 2000,
     ) -> Generator[bytes, None, None]:
         """
         Stream data from S3 Parquet file with optional filtering using DuckDB.
