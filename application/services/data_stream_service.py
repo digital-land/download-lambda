@@ -249,9 +249,19 @@ class DataStreamService:
                 f"DuckDB configured with memory_limit={memory_limit_mb}, threads=1"
             )
 
-            # Set home directory for DuckDB (Lambda needs /tmp for writes)
-            # Create the directory if it doesn't exist
+            # Set extension directory to where httpfs is pre-installed in Docker image
+            # Extensions are pre-installed to /root/.duckdb/extensions during image build
+            # We point DuckDB to this directory so it finds the pre-installed extension
+            extension_dir = "/root/.duckdb/extensions"
+            if os.path.exists(extension_dir):
+                conn.execute(f"SET extension_directory='{extension_dir}';")
+                logger.info(f"Using pre-installed extensions from: {extension_dir}")
+            else:
+                logger.info(
+                    "Extension directory not found, will auto-install if needed"
+                )
 
+            # Set home directory for temporary files (Lambda needs /tmp for writes)
             duckdb_home = "/tmp/duckdb"
             os.makedirs(duckdb_home, exist_ok=True)
             conn.execute(f"SET home_directory='{duckdb_home}';")
