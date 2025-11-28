@@ -37,7 +37,7 @@ class S3Service:
         self.bucket = bucket
         self.prefix = prefix.strip("/") if prefix else ""
         self.session = boto3.Session()
-        self.region = self.session.region_name or "us-east-1"
+        self.region = self.session.region_name or "eu-west-2"
 
         # Support custom S3 endpoint (for LocalStack, moto, etc.)
         self.endpoint_url = os.environ.get("AWS_ENDPOINT_URL") or os.environ.get(
@@ -118,10 +118,49 @@ class S3Service:
 
         Returns:
             True if dataset exists, False otherwise
+
+        Raises:
+            PermissionError: If Lambda doesn't have S3 read permissions
+            Exception: For other S3 errors (bucket doesn't exist, etc.)
         """
+        from botocore.exceptions import ClientError
+
         try:
             key = self.get_object_path(dataset)
+            s3_uri = f"s3://{self.bucket}/{key}"
+            logger.info(f"Checking if dataset exists: {s3_uri}")
             self.client.head_object(Bucket=self.bucket, Key=key)
+            logger.info(f"Dataset found: {s3_uri}")
             return True
-        except Exception:
-            return False
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            s3_uri = f"s3://{self.bucket}/{self.get_object_path(dataset)}"
+
+            # 404 = object doesn't exist (normal case)
+            if error_code == "404" or error_code == "NoSuchKey":
+                logger.info(f"Dataset not found: {s3_uri}")
+                return False
+
+            # 403 = permission denied
+            elif error_code == "403" or error_code == "AccessDenied":
+                logger.error(
+                    f"Access denied to S3 bucket: {s3_uri}\n"
+                    f"Lambda execution role needs s3:GetObject and s3:ListBucket permissions.\n"
+                    f"Error: {e}"
+                )
+                raise PermissionError(
+                    f"Lambda function does not have permission to access S3 bucket '{self.bucket}'. "
+                    f"Please grant the Lambda execution role s3:GetObject and s3:ListBucket permissions."
+                ) from e
+
+            # Other client errors (bucket doesn't exist, etc.)
+            else:
+                logger.error(f"S3 error accessing {s3_uri}: {error_code} - {e}")
+                raise Exception(f"S3 error: {error_code}") from e
+
+        except Exception as e:
+            s3_uri = f"s3://{self.bucket}/{self.get_object_path(dataset)}"
+            logger.error(
+                f"Unexpected error checking dataset: {s3_uri} - {type(e).__name__}: {e}"
+            )
+            raise
