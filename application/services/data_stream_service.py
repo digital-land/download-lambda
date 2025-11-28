@@ -57,6 +57,7 @@ class DataStreamService:
             s3_service: S3 service instance for bucket/credential access
         """
         self.s3_service = s3_service
+        self._conn_pool = None  # Connection pool for faster TTFB
         logger.info(f"Initialized DataStreamService for bucket '{s3_service.bucket}'")
 
     def stream_data(
@@ -92,8 +93,8 @@ class DataStreamService:
 
         conn = None
         try:
-            # Get configured DuckDB connection
-            conn = self._get_duckdb_conn()
+            # Get configured DuckDB connection (cached for faster TTFB on subsequent requests)
+            conn = self._get_or_create_conn()
 
             # Build S3 URI
             s3_uri = self.s3_service.get_s3_uri(dataset)
@@ -107,12 +108,13 @@ class DataStreamService:
                 """
                 params = [organisation_entity]
                 logger.info(
-                    f"Streaming with filter: organisation-entity={organisation_entity}"
+                    f"Streaming with filter: organisation-entity={organisation_entity}, "
+                    f"format={extension}"
                 )
             else:
                 query = f"SELECT * FROM read_parquet('{s3_uri}')"
                 params = []
-                logger.info("Streaming without filters")
+                logger.info(f"Streaming without filters, format={extension}")
 
             # Execute query and fetch Arrow record batch reader
             logger.info(f"Executing DuckDB query with chunk_size={chunk_size}")
@@ -171,7 +173,8 @@ class DataStreamService:
                 yield b"\n]"
 
             logger.info(
-                f"Successfully streamed {dataset}: {batch_count} batches, {total_rows} rows"
+                f"Successfully streamed {dataset}: {batch_count} batches, {total_rows} rows, "
+                f"format={extension}, filter={organisation_entity or 'none'}"
             )
 
         except duckdb.IOException as e:
@@ -211,12 +214,37 @@ class DataStreamService:
             raise
 
         finally:
-            # Always close the connection
-            if conn:
-                try:
-                    conn.close()
-                except Exception as e:
-                    logger.warning(f"Error closing DuckDB connection: {e}")
+            # Don't close connection - we reuse it for faster TTFB on next request
+            # Connection will be cleaned up when Lambda container is recycled
+            pass
+
+    def _get_or_create_conn(self) -> duckdb.DuckDBPyConnection:
+        """
+        Get or create a cached DuckDB connection for faster TTFB.
+
+        Reuses the same connection across requests in Lambda container,
+        saving ~50-100ms on connection setup and extension loading.
+
+        Returns:
+            Configured DuckDB connection ready for S3 access
+        """
+        # Check if we have a cached connection and it's still valid
+        if self._conn_pool is not None:
+            try:
+                # Test connection is still alive
+                self._conn_pool.execute("SELECT 1")
+                logger.info("Reusing cached DuckDB connection (faster TTFB)")
+                return self._conn_pool
+            except Exception as e:
+                logger.warning(
+                    f"Cached connection invalid: {e}, creating new connection"
+                )
+                self._conn_pool = None
+
+        # Create new connection and cache it
+        logger.info("Creating new DuckDB connection")
+        self._conn_pool = self._get_duckdb_conn()
+        return self._conn_pool
 
     def _get_duckdb_conn(self) -> duckdb.DuckDBPyConnection:
         """
@@ -384,8 +412,13 @@ class DataStreamService:
                 yield b",\n"
 
             # Build row dict from columns (avoids full batch conversion)
+            # Convert None/null values to empty strings for better compatibility
             row_dict = {
-                col_name: batch.column(col_name)[row_idx].as_py()
+                col_name: (
+                    ""
+                    if (val := batch.column(col_name)[row_idx].as_py()) is None
+                    else val
+                )
                 for col_name in column_names
             }
             yield json.dumps(row_dict).encode()
