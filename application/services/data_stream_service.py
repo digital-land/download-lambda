@@ -263,14 +263,22 @@ class DataStreamService:
             logger.info("Loading httpfs extension...")
             try:
                 conn.execute("LOAD httpfs;")
-                logger.info("httpfs extension loaded successfully")
-            except duckdb.CatalogException:
+                logger.info("httpfs extension loaded successfully (pre-installed)")
+            except (duckdb.CatalogException, duckdb.IOException) as e:
                 # httpfs not installed, install it now (fallback for non-Docker environments)
-                logger.info("httpfs not found, installing...")
-                conn.execute("INSTALL httpfs;")
-                logger.info("httpfs extension installed")
-                conn.execute("LOAD httpfs;")
-                logger.info("httpfs extension loaded successfully")
+                logger.info(
+                    f"httpfs not pre-installed ({type(e).__name__}), installing now..."
+                )
+                try:
+                    conn.execute("INSTALL httpfs;")
+                    logger.info("httpfs extension installed successfully")
+                    conn.execute("LOAD httpfs;")
+                    logger.info(
+                        "httpfs extension loaded successfully (freshly installed)"
+                    )
+                except Exception as install_error:
+                    logger.error(f"Failed to install httpfs: {install_error}")
+                    raise
 
             # Configure S3 region
             logger.info(f"Configuring S3 region: {self.s3_service.region}")
