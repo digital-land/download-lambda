@@ -31,10 +31,12 @@ RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt --target 
 
 # Pre-install DuckDB httpfs extension to avoid runtime installation
 # This saves ~40-50MB of memory at runtime and improves cold start time
-# Extensions are installed to ~/.duckdb/extensions by default
-# In Lambda, the home directory is /root, which persists across invocations
-RUN python -c "import duckdb; conn = duckdb.connect(':memory:'); conn.execute('INSTALL httpfs'); conn.execute('LOAD httpfs'); print('httpfs extension pre-installed successfully')" && \
-    echo "Extension installed to: $(find /root/.duckdb -name 'httpfs.duckdb_extension' 2>/dev/null || echo 'extension directory')"
+# Set HOME to /var/task (LAMBDA_TASK_ROOT) so extensions install there
+# This way they persist in the image and are found at runtime
+ENV HOME=${LAMBDA_TASK_ROOT}
+RUN mkdir -p ${LAMBDA_TASK_ROOT}/.duckdb && \
+    python -c "import duckdb; conn = duckdb.connect(':memory:'); conn.execute('INSTALL httpfs'); conn.execute('LOAD httpfs'); print('httpfs extension pre-installed successfully')" && \
+    echo "Extension installed to: $(find ${LAMBDA_TASK_ROOT}/.duckdb -name 'httpfs.duckdb_extension' 2>/dev/null || echo 'not found')"
 
 # Copy application code
 COPY application/ ${LAMBDA_TASK_ROOT}/application/

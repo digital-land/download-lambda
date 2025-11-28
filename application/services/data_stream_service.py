@@ -249,23 +249,18 @@ class DataStreamService:
                 f"DuckDB configured with memory_limit={memory_limit_mb}, threads=1"
             )
 
-            # Set extension directory to where httpfs is pre-installed in Docker image
-            # Extensions are pre-installed to /root/.duckdb/extensions during image build
-            # We point DuckDB to this directory so it finds the pre-installed extension
-            extension_dir = "/root/.duckdb/extensions"
-            if os.path.exists(extension_dir):
-                conn.execute(f"SET extension_directory='{extension_dir}';")
-                logger.info(f"Using pre-installed extensions from: {extension_dir}")
+            # DuckDB will use $HOME/.duckdb for extensions
+            # In Docker/Lambda: HOME=/var/task, so extensions are in /var/task/.duckdb (pre-installed)
+            # In local dev: HOME=~, so extensions are in ~/.duckdb (will auto-install if needed)
+            # No need to set home_directory - DuckDB uses $HOME automatically
+            home_dir = os.environ.get("HOME", os.path.expanduser("~"))
+            extensions_dir = f"{home_dir}/.duckdb/extensions"
+            if os.path.exists(extensions_dir):
+                logger.info(f"Pre-installed extensions found in: {extensions_dir}")
             else:
                 logger.info(
-                    "Extension directory not found, will auto-install if needed"
+                    f"Extensions directory not found, will auto-install to: {extensions_dir}"
                 )
-
-            # Set home directory for temporary files (Lambda needs /tmp for writes)
-            duckdb_home = "/tmp/duckdb"
-            os.makedirs(duckdb_home, exist_ok=True)
-            conn.execute(f"SET home_directory='{duckdb_home}';")
-            logger.info(f"DuckDB home directory set to {duckdb_home}")
 
             # Load httpfs extension for S3 access
             # Note: httpfs is pre-installed in the Docker image to save runtime memory
