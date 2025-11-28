@@ -236,7 +236,7 @@ class DataStreamService:
             # Set memory limit to prevent OOM in Lambda (use 60% of available memory)
             # For 128MB Lambda: ~75MB limit, for 256MB: ~150MB limit
             # This leaves room for Python runtime and other overhead
-            memory_limit_mb = os.environ.get("DUCKDB_MEMORY_LIMIT", "60MB")
+            memory_limit_mb = os.environ.get("DUCKDB_MEMORY_LIMIT", "150MB")
             conn.execute(f"SET memory_limit='{memory_limit_mb}';")
 
             # Limit thread count for Lambda (single vCPU environment)
