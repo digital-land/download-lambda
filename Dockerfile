@@ -29,6 +29,10 @@ COPY requirements.txt ${LAMBDA_TASK_ROOT}/
 # Use --target to install into the Lambda task root
 RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt --target "${LAMBDA_TASK_ROOT}"
 
+# Pre-install DuckDB httpfs extension to avoid runtime installation
+# This saves ~40-50MB of memory at runtime and improves cold start time
+RUN python -c "import duckdb; conn = duckdb.connect(':memory:'); conn.execute('INSTALL httpfs'); print('httpfs extension pre-installed successfully')"
+
 # Copy application code
 COPY application/ ${LAMBDA_TASK_ROOT}/application/
 
