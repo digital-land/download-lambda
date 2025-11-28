@@ -94,6 +94,7 @@ class DataStreamService:
 
             # Build S3 URI
             s3_uri = self.s3_service.get_s3_uri(dataset)
+            logger.info(f"Reading from S3 URI: {s3_uri}")
 
             # Build query with optional filter
             if organisation_entity:
@@ -111,8 +112,11 @@ class DataStreamService:
                 logger.info("Streaming without filters")
 
             # Execute query and fetch Arrow record batch reader
+            logger.info(f"Executing DuckDB query with chunk_size={chunk_size}")
             result = conn.execute(query, params)
+            logger.info("Query executed, fetching record batches...")
             reader = result.fetch_record_batch(chunk_size)
+            logger.info("Record batch reader created successfully")
 
             # Get schema for handling empty results
             schema = reader.schema if hasattr(reader, "schema") else None
@@ -122,9 +126,17 @@ class DataStreamService:
             batch_count = 0
             total_rows = 0
 
+            logger.info("Starting batch iteration...")
             for batch in reader:
                 batch_count += 1
                 total_rows += len(batch)
+
+                if batch_count == 1:
+                    logger.info(f"Processing first batch: {len(batch)} rows")
+                elif batch_count % 10 == 0:
+                    logger.info(
+                        f"Processed {batch_count} batches, {total_rows} rows so far"
+                    )
 
                 # Convert batch to requested format
                 if extension == "csv":
@@ -176,12 +188,23 @@ class DataStreamService:
             logger.error(f"DuckDB I/O error for {dataset}: {error_msg}")
             raise
 
+        except duckdb.OutOfMemoryException as e:
+            error_msg = str(e)
+            logger.error(
+                f"DuckDB out of memory processing {dataset}: {error_msg}. "
+                f"Current DUCKDB_MEMORY_LIMIT: {os.environ.get('DUCKDB_MEMORY_LIMIT', '60MB')}. "
+                f"Consider increasing Lambda memory or setting a higher DUCKDB_MEMORY_LIMIT."
+            )
+            raise Exception(
+                "Out of memory processing dataset. Try increasing Lambda memory size."
+            ) from e
+
         except duckdb.Error as e:
             logger.error(f"DuckDB error processing {dataset}: {str(e)}")
             raise Exception(f"DuckDB processing error: {str(e)}") from e
 
         except Exception as e:
-            logger.error(f"Error processing {dataset}: {str(e)}")
+            logger.error(f"Error processing {dataset}: {str(e)}", exc_info=True)
             raise
 
         finally:
@@ -229,12 +252,19 @@ class DataStreamService:
             duckdb_home = "/tmp/duckdb"
             os.makedirs(duckdb_home, exist_ok=True)
             conn.execute(f"SET home_directory='{duckdb_home}';")
+            logger.info(f"DuckDB home directory set to {duckdb_home}")
 
             # Install and load httpfs extension for S3 access
+            logger.info("Installing httpfs extension...")
             conn.execute("INSTALL httpfs;")
+            logger.info("httpfs extension installed successfully")
+
+            logger.info("Loading httpfs extension...")
             conn.execute("LOAD httpfs;")
+            logger.info("httpfs extension loaded successfully")
 
             # Configure S3 region
+            logger.info(f"Configuring S3 region: {self.s3_service.region}")
             conn.execute(f"SET s3_region='{self.s3_service.region}';")
 
             # Check for custom S3 endpoint (for LocalStack, moto, etc.)
@@ -261,6 +291,7 @@ class DataStreamService:
                 )
 
             # Get credentials from S3 service
+            logger.info("Configuring S3 credentials...")
             credentials = self.s3_service.get_credentials()
 
             if credentials:
@@ -270,9 +301,13 @@ class DataStreamService:
                 # Set session token if available (for temporary credentials)
                 if credentials.get("token"):
                     conn.execute(f"SET s3_session_token='{credentials['token']}';")
+                    logger.info("S3 credentials configured (with session token)")
+                else:
+                    logger.info("S3 credentials configured (access key only)")
             else:
                 logger.warning("No AWS credentials found - S3 access may fail")
 
+            logger.info("DuckDB connection fully configured and ready")
             return conn
 
         except Exception as e:
