@@ -51,8 +51,8 @@ download-lambda/
 │   ├── utils.py               # Request parsing utilities
 │   └── data_processor.py      # DuckDB-based Parquet processing
 ├── tests/                     ## all pytest based tests
-│   └── ...                  
-├── scripts/                   ## helper scripts 
+│   └── ...
+├── scripts/                   ## helper scripts
 │   └── build.ssh              # script to build the lambda function for upload
 ├── requirements.txt           # Python dependencies
 ├── requirements-dev.txt       # Development dependencies
@@ -136,6 +136,28 @@ DEPLOYMENT_BUCKET          - S3 bucket for Lambda packages (optional)
 LAMBDA_FUNCTION_NAME       - Function name (optional)
 ```
 
+## Development Setup
+
+### Install Dependencies
+
+```bash
+# Development environment (default - includes testcontainers, pytest, etc.)
+# Also builds Lambda Docker image for integration testing
+make init
+
+# Production environment only (no test dependencies, no Docker build)
+make init ENV=prod
+```
+
+The `ENV` variable controls which requirements are installed:
+- `ENV=local` (default):
+  - Installs `requirements-dev.txt` (includes testcontainers, pytest, black, etc.)
+  - Builds Lambda Docker image (`download-lambda:test`) for integration tests
+  - Sets up pre-commit hooks
+- `ENV=prod`: Installs `requirements.txt` only (production dependencies)
+
+**Note**: `make init` will build the Docker image automatically if Docker is available. This enables you to run integration tests immediately after setup.
+
 ## Testing
 
 This project follows [Digital Land testing guidance](https://digital-land.github.io/technical-documentation/development/testing-guidance/) with comprehensive unit, integration, and acceptance tests.
@@ -158,6 +180,9 @@ make test-integration
 # Acceptance tests (user scenarios)
 make test-acceptance
 
+# Test Lambda container locally with Docker (simulates actual Lambda environment)
+make test-lambda
+
 # With coverage report
 make test-coverage
 ```
@@ -167,9 +192,34 @@ make test-coverage
 ```
 tests/
 ├── unit/                    # Fast, isolated tests
-├── integration/             # Tests with mocked S3
+├── integration/             # Tests with mocked S3 and Lambda containers
 └── acceptance/              # End-to-end user scenarios
 ```
+
+### Lambda Container Testing
+
+Test the actual Lambda Docker image with Web Adapter locally:
+
+```bash
+# Quick test with shell script (recommended)
+make test-lambda
+
+# Or use Docker Compose directly
+docker-compose -f docker-compose.test.yml up --build
+curl -o test.csv "http://localhost:9000/conservation-area.csv"
+python scripts/compare_entities.py test-data/conservation-area.parquet test.csv
+
+# Or use Python integration tests with testcontainers
+pytest tests/integration/test_lambda_streaming.py -v
+```
+
+This simulates the actual Lambda environment with:
+- Lambda Web Adapter in response streaming mode
+- LocalStack for S3 emulation
+- Real Parquet file streaming from S3
+- Entity-level verification to detect data corruption
+
+See [tests/integration/README.md](tests/integration/README.md) for detailed Lambda testing documentation.
 
 See [TESTING.md](TESTING.md) for comprehensive testing documentation.
 

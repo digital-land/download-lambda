@@ -127,9 +127,8 @@ async def download_dataset(
                     yield chunk
                     chunk_count += 1
                     total_bytes += len(chunk)
-                    # Give the Lambda runtime a chance to send data every 10 chunks
-                    if chunk_count % 10 == 0:
-                        await asyncio.sleep(0)
+                    # NOTE: Removed asyncio.sleep(0) - it was causing chunk reordering
+                    # in Lambda Web Adapter, leading to data corruption
 
             except (TimeoutError, asyncio.TimeoutError):
                 stream_status["complete"] = False

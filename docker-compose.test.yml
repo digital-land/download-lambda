@@ -1,0 +1,94 @@
+# Docker Compose for local Lambda testing with Web Adapter
+# This simulates the actual Lambda environment locally
+#
+# Usage:
+#   docker-compose -f docker-compose.test.yml up --build
+#   curl -o test-download.csv "http://localhost:9000/conservation-area.csv"
+
+version: '3.8'
+
+services:
+  # LocalStack for S3 emulation
+  localstack:
+    image: localstack/localstack:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      - "./test-data:/test-data"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+
+  # Lambda function with Web Adapter
+  # This runs the actual Docker image that would be deployed to Lambda
+  lambda:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+    ports:
+      - "9000:8000"  # Application port (uvicorn via Lambda Web Adapter)
+    environment:
+      # Application configuration
+      - DATASET_BUCKET=test-bucket
+      - AWS_REGION=us-east-1
+      - S3_ENDPOINT_URL=http://localstack:4566
+      - S3_USE_SSL=false
+
+      # AWS credentials (for LocalStack)
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+
+      # Lambda Web Adapter configuration (already in Dockerfile ENV, but explicit here)
+      - PORT=8000
+      - AWS_LWA_INVOKE_MODE=response_stream
+      - AWS_LWA_READINESS_CHECK_PORT=8000
+      - AWS_LWA_READINESS_CHECK_PATH=/health
+
+      # DuckDB configuration
+      - DUCKDB_MEMORY_LIMIT=256MB
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # Setup service to populate S3 with test data
+  setup:
+    image: amazon/aws-cli:latest
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    volumes:
+      - "./test-data:/test-data"
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        # Create bucket
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://test-bucket
+
+        # Create dataset directory structure
+        aws --endpoint-url=http://localstack:4566 s3 cp /test-data/conservation-area.parquet s3://test-bucket/dataset/conservation-area.parquet
+
+        # Verify upload
+        aws --endpoint-url=http://localstack:4566 s3 ls s3://test-bucket/dataset/
+
+        echo "✅ Test data uploaded to LocalStack S3"
