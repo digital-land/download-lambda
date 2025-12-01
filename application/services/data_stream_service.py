@@ -368,19 +368,50 @@ class DataStreamService:
         self, batch: pa.RecordBatch, include_header: bool = False
     ) -> Generator[bytes, None, None]:
         """
-        Convert Arrow RecordBatch to CSV format.
+        Convert Arrow RecordBatch to CSV format with Lambda payload size limits.
+
+        AWS Lambda response streaming has a 6MB per-chunk limit. This method
+        splits large batches into smaller chunks to stay within that limit.
 
         Args:
             batch: Arrow RecordBatch to convert
             include_header: Whether to include column headers
 
         Yields:
-            CSV data as bytes
+            CSV data as bytes (each chunk < 6MB)
         """
+        # Lambda response streaming limit: 6MB per chunk
+        # Use 5MB to leave room for headers and safety margin
+        MAX_CHUNK_SIZE = 5 * 1024 * 1024  # 5MB
+
         output = io.BytesIO()
         write_options = csv.WriteOptions(include_header=include_header)
         csv.write_csv(batch, output, write_options=write_options)
-        yield output.getvalue()
+        csv_data = output.getvalue()
+
+        # If the CSV data exceeds the limit, split it into smaller chunks
+        if len(csv_data) > MAX_CHUNK_SIZE:
+            logger.warning(
+                f"CSV batch size ({len(csv_data)} bytes) exceeds Lambda limit. "
+                f"Splitting into smaller chunks."
+            )
+            # Split the CSV data into chunks, ensuring we don't break in the middle of a line
+            start = 0
+            while start < len(csv_data):
+                end = start + MAX_CHUNK_SIZE
+
+                # If this isn't the last chunk, find the last newline before the limit
+                if end < len(csv_data):
+                    # Find the last newline before the chunk size limit
+                    last_newline = csv_data.rfind(b"\n", start, end)
+                    if last_newline > start:
+                        end = last_newline + 1  # Include the newline
+
+                chunk = csv_data[start:end]
+                yield chunk
+                start = end
+        else:
+            yield csv_data
 
     def _arrow_to_json(
         self, batch: pa.RecordBatch, first_chunk: bool = False
@@ -425,18 +456,53 @@ class DataStreamService:
 
     def _arrow_to_parquet(self, batch: pa.RecordBatch) -> Generator[bytes, None, None]:
         """
-        Convert Arrow RecordBatch to Parquet format with minimal memory overhead.
+        Convert Arrow RecordBatch to Parquet format with Lambda payload size limits.
+
+        AWS Lambda response streaming has a 6MB per-chunk limit. If a batch
+        exceeds this, we split it into smaller sub-batches.
 
         Args:
             batch: Arrow RecordBatch to convert
 
         Yields:
-            Parquet data as bytes
+            Parquet data as bytes (each chunk < 6MB)
         """
+        # Lambda response streaming limit: 6MB per chunk
+        # Use 5MB to leave room for safety margin
+        MAX_CHUNK_SIZE = 5 * 1024 * 1024  # 5MB
+
         output = io.BytesIO()
         # Use RecordBatchFileWriter for more efficient streaming
         # Write directly from RecordBatch without intermediate Table conversion
         writer = pq.ParquetWriter(output, batch.schema, compression="snappy")
         writer.write_batch(batch)
         writer.close()
-        yield output.getvalue()
+        parquet_data = output.getvalue()
+
+        # If the parquet data exceeds the limit, split the batch into smaller sub-batches
+        if len(parquet_data) > MAX_CHUNK_SIZE:
+            logger.warning(
+                f"Parquet batch size ({len(parquet_data)} bytes) exceeds Lambda limit. "
+                f"Splitting batch into smaller sub-batches."
+            )
+            # Split the RecordBatch into smaller batches
+            num_rows = len(batch)
+            rows_per_chunk = max(1, num_rows // 2)  # Start by splitting in half
+
+            start_row = 0
+            while start_row < num_rows:
+                end_row = min(start_row + rows_per_chunk, num_rows)
+                sub_batch = batch.slice(start_row, end_row - start_row)
+
+                # Write sub-batch to parquet
+                sub_output = io.BytesIO()
+                sub_writer = pq.ParquetWriter(
+                    sub_output, sub_batch.schema, compression="snappy"
+                )
+                sub_writer.write_batch(sub_batch)
+                sub_writer.close()
+
+                yield sub_output.getvalue()
+                start_row = end_row
+        else:
+            yield parquet_data

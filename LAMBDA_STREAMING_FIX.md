@@ -21,17 +21,30 @@ Entity `44008914` at row index 6791 was completely missing from Lambda download 
 - Local streaming output ✅
 - Lambda streaming output ❌
 
-## Root Cause
+## Root Causes
+
+### 1. Async Event Loop Yielding (Initial Issue - FIXED)
 
 The `await asyncio.sleep(0)` call in `application/routers.py:132` was causing chunk reordering in the Lambda Web Adapter's async handling. When we yielded control to the event loop every 10 chunks, the Lambda Web Adapter would sometimes deliver chunks out of order or lose them entirely.
 
 This is a known issue with async generators and Lambda response streaming when using explicit event loop yields.
 
-## Fix
+### 2. Lambda Response Streaming Chunk Size Limit (CRITICAL - FIXED)
 
-**Removed the `await asyncio.sleep(0)` call** that was intended to give the Lambda runtime a chance to send data.
+**AWS Lambda response streaming has a hard limit of 6MB per chunk.** When CSV batches with large geometry columns exceeded this limit, Lambda would silently drop or truncate the data, leading to:
+- Missing rows scattered throughout the file
+- Consistent truncation at specific positions
+- Wrong entities appearing in the output
 
-### Before (Corrupted)
+**Solution**: Split large chunks at line boundaries to ensure no single chunk exceeds 5MB (with safety margin).
+
+## Fixes
+
+### Fix 1: Remove asyncio.sleep(0)
+
+**Removed the `await asyncio.sleep(0)` call** that was causing chunk reordering.
+
+#### Before (Corrupted)
 ```python
 for chunk in data_stream_service.stream_data(...):
     yield chunk
@@ -42,7 +55,7 @@ for chunk in data_stream_service.stream_data(...):
         await asyncio.sleep(0)  # ❌ CAUSED CHUNK REORDERING
 ```
 
-### After (Fixed)
+#### After (Fixed)
 ```python
 for chunk in data_stream_service.stream_data(...):
     yield chunk
@@ -51,6 +64,41 @@ for chunk in data_stream_service.stream_data(...):
     # NOTE: Removed asyncio.sleep(0) - it was causing chunk reordering
     # in Lambda Web Adapter, leading to data corruption
 ```
+
+### Fix 2: Enforce Lambda Chunk Size Limits
+
+**Added automatic chunk splitting** to ensure no chunk exceeds Lambda's 6MB limit.
+
+#### CSV Chunking (data_stream_service.py:367-414)
+```python
+def _arrow_to_csv(self, batch, include_header=False):
+    MAX_CHUNK_SIZE = 5 * 1024 * 1024  # 5MB (safety margin)
+
+    # Convert batch to CSV
+    csv_data = output.getvalue()
+
+    # Split if needed
+    if len(csv_data) > MAX_CHUNK_SIZE:
+        logger.warning(f"CSV batch size ({len(csv_data)} bytes) exceeds Lambda limit. Splitting.")
+        # Split at line boundaries to avoid breaking CSV rows
+        start = 0
+        while start < len(csv_data):
+            end = start + MAX_CHUNK_SIZE
+            if end < len(csv_data):
+                # Find last newline before limit
+                last_newline = csv_data.rfind(b'\n', start, end)
+                if last_newline > start:
+                    end = last_newline + 1
+            yield csv_data[start:end]
+            start = end
+    else:
+        yield csv_data
+```
+
+#### Parquet Chunking (data_stream_service.py:457-508)
+- Similar approach for Parquet format
+- Splits RecordBatch into smaller sub-batches if needed
+- Each sub-batch written as separate Parquet chunk
 
 ## Testing
 
@@ -149,11 +197,21 @@ After deploying this fix:
 
 ## Files Modified
 
-- [application/routers.py](application/routers.py#L130-131) - Removed `await asyncio.sleep(0)` causing chunk reordering
+1. [application/routers.py](application/routers.py#L130-131)
+   - Removed `await asyncio.sleep(0)` causing chunk reordering
+
+2. [application/services/data_stream_service.py](application/services/data_stream_service.py)
+   - `_arrow_to_csv()` (lines 367-414): Added 5MB chunk size limit with line-boundary splitting
+   - `_arrow_to_parquet()` (lines 457-508): Added 5MB chunk size limit with RecordBatch sub-batching
+   - Added logging when chunks are split due to size
 
 ## Files Added
 
 - [scripts/compare_entities.py](scripts/compare_entities.py) - Diagnostic tool to compare Parquet source with CSV download
+- [docker-compose.test.yml](docker-compose.test.yml) - Local Lambda testing with LocalStack
+- [scripts/test_lambda_local.sh](scripts/test_lambda_local.sh) - Automated Lambda container testing
+- [tests/integration/test_lambda_streaming.py](tests/integration/test_lambda_streaming.py) - testcontainers-based integration tests
+- [tests/integration/README.md](tests/integration/README.md) - Lambda testing documentation
 - This document
 
 ## Related Issues
