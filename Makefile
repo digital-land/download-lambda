@@ -1,8 +1,34 @@
-.PHONY: init test test-unit test-integration test-acceptance test-coverage lint format build deploy clean dev-up dev-down dev-logs dev-restart dev-rebuild dev-gen-data dev-clean
+.PHONY: init test test-unit test-integration test-acceptance test-coverage test-lambda lint format build deploy clean dev-up dev-down dev-logs dev-restart dev-rebuild dev-gen-data dev-clean
+
+# Environment variable to control which requirements to install
+# ENV=prod will install only production requirements
+# ENV=local (default) will install development requirements
+ENV ?= local
 
 init:
+ifeq ($(ENV),prod)
+	@echo "📦 Installing production requirements only..."
+	pip install -r requirements.txt
+else
+	@echo "📦 Installing development requirements (includes testcontainers, pytest, etc.)..."
 	pip install -r requirements-dev.txt
 	pre-commit install
+	@echo ""
+	@echo "🐳 Building Lambda Docker image for local testing..."
+	@echo "   (testcontainers can also build this automatically, but pre-building speeds up first test run)"
+	@if command -v docker >/dev/null 2>&1; then \
+		docker build -t download-lambda:test . --platform linux/amd64 && \
+		echo "✅ Lambda Docker image built successfully"; \
+	else \
+		echo "⚠️  Docker not found. Skipping Lambda image build."; \
+		echo "   testcontainers will build the image automatically when running tests."; \
+	fi
+	@echo ""
+	@echo "✅ Development environment ready!"
+	@echo "   - Run tests: make test"
+	@echo "   - Run integration tests: make test-integration"
+	@echo "   - Test Lambda locally: make test-lambda"
+endif
 
 # Run all tests
 test:
@@ -29,6 +55,12 @@ test-coverage:
 # Run tests for CI (with XML coverage for codecov)
 test-ci:
 	python -m pytest --cov=src --cov-report=xml --cov-report=term
+
+# Test Lambda container locally with Docker (simulates actual Lambda environment)
+test-lambda:
+	@echo "🐳 Testing Lambda container with Web Adapter..."
+	@echo ""
+	./scripts/test_lambda_local.sh
 
 lint:
 	black --check application/ tests/

@@ -42,6 +42,11 @@ async def download_dataset(
         description="Filter dataset by organisation entity",
         examples=["org-123", "company-abc"],
     ),
+    quality: Optional[Literal["", "some", "authoritative"]] = Query(
+        None,
+        description="Filter dataset by quality value (allowed: '', 'some', 'authoritative')",
+        examples=["some", "authoritative", ""],
+    ),
     data_stream_service: DataStreamService = Depends(get_data_stream_service),
 ):
     """
@@ -62,11 +67,13 @@ async def download_dataset(
 
     **Query Parameters:**
     - `organisation-entity`: Optional filter to return only rows matching this value
+    - `quality`: Optional filter to return only rows matching this quality value
 
     Args:
         dataset: Dataset name (maps to {dataset}.parquet in S3)
         extension: Output format (csv, json, or parquet)
         organisation_entity: Optional filter value for organisation-entity column
+        quality: Optional filter value for quality column
         data_stream_service: Data streaming service (injected via dependency)
 
     Returns:
@@ -78,9 +85,17 @@ async def download_dataset(
         HTTPException 500: Server error during processing
     """
     try:
+        # Build filter description for logging
+        filters = []
+        if organisation_entity:
+            filters.append(f"organisation-entity={organisation_entity}")
+        if quality:
+            filters.append(f"quality={quality}")
+        filter_desc = ", ".join(filters) if filters else "none"
+
         logger.info(
             f"Processing download: dataset={dataset}, "
-            f"format={extension}, filter={organisation_entity}"
+            f"format={extension}, filters={filter_desc}"
         )
 
         # Check if dataset exists before streaming
@@ -90,20 +105,94 @@ async def download_dataset(
                 status_code=404, detail=f"Dataset '{dataset}' not found"
             )
 
+        # Test DuckDB connection before starting stream
+        # This ensures any configuration errors are caught early
+        try:
+            test_conn = data_stream_service._get_duckdb_conn()
+            test_conn.close()
+        except Exception as e:
+            logger.error(f"Failed to initialize DuckDB connection: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail="Server error: Unable to initialize data processing engine",
+            )
+
         # Get response metadata
         filename = get_filename(dataset, extension)
         content_type = get_content_type(extension)
 
         # Stream data from service
-        data_generator = data_stream_service.stream_data(
-            dataset=dataset,
-            extension=extension,
-            organisation_entity=organisation_entity,
-        )
+        # Wrap generator to ensure proper completion for Lambda Web Adapter
+        # Add explicit async yields to allow Lambda runtime to process chunks
+        # Track completion status for headers
+        stream_status = {"complete": True, "reason": None}
+
+        async def stream_wrapper():
+            """Wrapper to ensure generator completes properly with Lambda Web Adapter."""
+            import asyncio
+
+            chunk_count = 0
+            total_bytes = 0
+            try:
+                for chunk in data_stream_service.stream_data(
+                    dataset=dataset,
+                    extension=extension,
+                    organisation_entity=organisation_entity,
+                    quality=quality,
+                ):
+                    yield chunk
+                    chunk_count += 1
+                    total_bytes += len(chunk)
+                    # NOTE: Removed asyncio.sleep(0) - it was causing chunk reordering
+                    # in Lambda Web Adapter, leading to data corruption
+
+            except (TimeoutError, asyncio.TimeoutError):
+                stream_status["complete"] = False
+                stream_status["reason"] = "timeout"
+                logger.warning(
+                    f"Timeout during streaming after {chunk_count} chunks ({total_bytes} bytes). "
+                    f"Dataset: {dataset}, Filter: {organisation_entity}"
+                )
+                # For JSON, close the array gracefully
+                if extension == "json":
+                    yield b"\n]"
+                # For CSV/Parquet, partial data is already valid
+                logger.info(
+                    f"Gracefully closed stream after timeout: {chunk_count} chunks sent"
+                )
+
+            except asyncio.CancelledError:
+                stream_status["complete"] = False
+                stream_status["reason"] = "cancelled"
+                logger.warning(
+                    f"Request cancelled during streaming after {chunk_count} chunks ({total_bytes} bytes). "
+                    f"Dataset: {dataset}, Filter: {organisation_entity}"
+                )
+                # For JSON, close the array gracefully
+                if extension == "json":
+                    yield b"\n]"
+                logger.info(
+                    f"Gracefully closed stream after cancellation: {chunk_count} chunks sent"
+                )
+
+            except Exception as e:
+                stream_status["complete"] = False
+                stream_status["reason"] = "error"
+                logger.error(
+                    f"Error during streaming after {chunk_count} chunks ({total_bytes} bytes): {e}",
+                    exc_info=True,
+                )
+                raise
+
+            finally:
+                logger.info(
+                    f"Stream wrapper completed: {chunk_count} chunks, {total_bytes} bytes, "
+                    f"complete={stream_status['complete']}, reason={stream_status['reason']}"
+                )
 
         # Return streaming response
         return StreamingResponse(
-            data_generator,
+            stream_wrapper(),
             media_type=content_type,
             headers={
                 "Content-Disposition": f'attachment; filename="{filename}"',
@@ -116,6 +205,13 @@ async def download_dataset(
     except HTTPException:
         # Re-raise HTTPException as-is (already has correct status code)
         raise
+
+    except PermissionError as e:
+        logger.error(f"S3 permission error for dataset {dataset}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Server configuration error: Lambda function does not have permission to access S3 bucket",
+        )
 
     except FileNotFoundError as e:
         logger.error(f"Dataset not found: {dataset} - {e}")

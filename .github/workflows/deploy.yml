@@ -5,6 +5,10 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      environment:
+        type: environment
+        description: The environment to deploy.
 
 env:
   AWS_REGION: eu-west-2
@@ -39,6 +43,8 @@ jobs:
       matrix:
         environment: ${{ fromJSON(needs.detect-environments.outputs.environments) }}
     environment: ${{ matrix.environment }}
+    env:
+       DOCKER_REPO: ${{ secrets.DEPLOY_DOCKER_REPOSITORY }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,33 +52,55 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync jq
+
+      - run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install --update
+
+      - id: vars
+        name: Set deployment variables
+        run: |
+          sha_short=$(git rev-parse --short HEAD)
+          timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+          safe_ref=$(echo "${GITHUB_REF_NAME}" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's#[^a-z0-9_.-]+#-#g; s/^-+//; s/-+$//')
+          echo "sha_short=${sha_short}" >> "$GITHUB_OUTPUT"
+          echo "timestamp=${timestamp}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${timestamp}-${sha_short}" >> "$GITHUB_OUTPUT"
+          echo "safe_ref=${safe_ref}" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v1-node16
         with:
           aws-access-key-id: ${{ secrets.DEPLOY_AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.DEPLOY_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: eu-west-2
 
       - name: Login to Amazon ECR
         id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+        uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and push Docker image
+      - name: Build and publish Docker image
+        id: build-and-publish
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ matrix.environment }}-download-lambda
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build \
-            --platform linux/amd64 \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-            -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \
-            .
+          docker build --platform linux/amd64 --build-arg DEPLOY_TIME="$(date +%Y-%m-%dT%H:%M:%S)" -t $DOCKER_REPO:${{ steps.vars.outputs.sha_short }} .
+          docker tag $DOCKER_REPO:${{ steps.vars.outputs.sha_short }} $DOCKER_REPO:${{ steps.vars.outputs.safe_ref }}
+          docker tag $DOCKER_REPO:${{ steps.vars.outputs.sha_short }} $DOCKER_REPO:${{ steps.vars.outputs.release_tag }}
+          docker push $DOCKER_REPO:${{ steps.vars.outputs.safe_ref }}
+          docker push $DOCKER_REPO:${{ steps.vars.outputs.release_tag }}
 
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-          echo "image_uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "image_uri=$DOCKER_REPO:${{ steps.vars.outputs.release_tag }}" >> $GITHUB_OUTPUT
 
       - name: Update Lambda function
         env:
@@ -82,7 +110,7 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name ${{ matrix.environment }}-download-lambda \
-            --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+            --image-uri ${{ steps.build-and-publish.outputs.image_uri }}
 
       - name: Wait for Lambda update to complete
         run: |
@@ -90,16 +118,12 @@ jobs:
             --function-name ${{ matrix.environment }}-download-lambda
 
       - name: Deployment Summary
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ matrix.environment }}-download-lambda
-          IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "## Deployment Summary - ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "✅ Docker image built and pushed to ECR" >> $GITHUB_STEP_SUMMARY
           echo "✅ Lambda function updated" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** \`$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** \`${{ steps.build-and-publish.outputs.image_uri }}\`" >> $GITHUB_STEP_SUMMARY
           echo "**Function:** \`${{ matrix.environment }}-download-lambda\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

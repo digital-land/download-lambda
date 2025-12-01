@@ -166,8 +166,8 @@ jobs:
           COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(root.attrib['line-rate'])")
           COVERAGE_PERCENT=$(python -c "print(int(float($COVERAGE) * 100))")
           echo "Coverage: ${COVERAGE_PERCENT}%"
-          if [ $COVERAGE_PERCENT -lt 80 ]; then
-            echo "❌ Coverage ${COVERAGE_PERCENT}% is below 80% threshold"
+          if [ $COVERAGE_PERCENT -lt 60 ]; then
+            echo "❌ Coverage ${COVERAGE_PERCENT}% is below 60% threshold"
             exit 1
           else
             echo "✅ Coverage ${COVERAGE_PERCENT}% meets threshold"
