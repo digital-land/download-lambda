@@ -16,7 +16,7 @@ A high-performance Lambda function that streams filtered dataset downloads from 
 ## URL Format
 
 ```
-GET /{dataset}.{extension}?organisation-entity={value}
+GET /{dataset}.{extension}?organisation-entity={value}&quality={value}
 ```
 
 ### Path Parameters
@@ -27,6 +27,9 @@ GET /{dataset}.{extension}?organisation-entity={value}
 ### Query Parameters
 
 - `organisation-entity` (optional): Filter data by organisation entity value
+- `quality` (optional): Filter data by quality value. Allowed values: `""` (empty string), `"some"`, `"authoritative"`
+
+Multiple filters can be combined and will be applied with AND logic.
 
 ### Examples
 
@@ -34,11 +37,14 @@ GET /{dataset}.{extension}?organisation-entity={value}
 # Download full dataset as CSV
 GET /conservation-area.csv
 
-# Download filtered dataset as JSON
+# Download filtered dataset by organisation
 GET /conservation-area.json?organisation-entity=122
 
-# Download filtered dataset as Parquet
-GET /conservation-area.parquet?organisation-entity=122
+# Download filtered dataset by quality
+GET /conservation-area.csv?quality=some
+
+# Download with multiple filters (AND logic)
+GET /conservation-area.parquet?organisation-entity=122&quality=authoritative
 ```
 
 ## Project Structure

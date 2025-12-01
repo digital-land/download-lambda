@@ -65,6 +65,7 @@ class DataStreamService:
         dataset: str,
         extension: str,
         organisation_entity: Optional[str] = None,
+        quality: Optional[str] = None,
         chunk_size: int = 2000,
     ) -> Generator[bytes, None, None]:
         """
@@ -80,6 +81,7 @@ class DataStreamService:
             dataset: Dataset name (e.g., "my-dataset" - .parquet extension added automatically)
             extension: Output format extension (csv, json, parquet)
             organisation_entity: Organisation entity code to filter by (None = no filtering)
+            quality: Quality value to filter by (None = no filtering)
             chunk_size: Number of rows to process at a time
 
         Yields:
@@ -100,20 +102,44 @@ class DataStreamService:
             s3_uri = self.s3_service.get_s3_uri(dataset)
             logger.info(f"Reading from S3 URI: {s3_uri}")
 
-            # Build query with optional filter
+            # Build query with optional filters
+            where_clauses = []
+            params = []
+
             if organisation_entity:
+                where_clauses.append('"organisation-entity" = ?')
+                params.append(organisation_entity)
+
+            if quality:
+                where_clauses.append('"quality" = ?')
+                params.append(quality)
+
+            if where_clauses:
+                where_clause = " AND ".join(where_clauses)
                 query = f"""
                     SELECT * FROM read_parquet('{s3_uri}')
-                    WHERE "organisation-entity" = ?
+                    WHERE {where_clause}
                 """
-                params = [organisation_entity]
+                # Build readable filter description for logging
+                filter_desc = ", ".join(
+                    [
+                        f
+                        for f in [
+                            (
+                                f"organisation-entity={organisation_entity}"
+                                if organisation_entity
+                                else None
+                            ),
+                            f"quality={quality}" if quality else None,
+                        ]
+                        if f
+                    ]
+                )
                 logger.info(
-                    f"Streaming with filter: organisation-entity={organisation_entity}, "
-                    f"format={extension}"
+                    f"Streaming with filters: {filter_desc}, format={extension}"
                 )
             else:
                 query = f"SELECT * FROM read_parquet('{s3_uri}')"
-                params = []
                 logger.info(f"Streaming without filters, format={extension}")
 
             # Execute query and fetch Arrow record batch reader
@@ -130,29 +156,49 @@ class DataStreamService:
             first_chunk = True
             batch_count = 0
             total_rows = 0
+            total_chunks_yielded = 0
 
             logger.info("Starting batch iteration...")
             for batch in reader:
                 batch_count += 1
-                total_rows += len(batch)
+                batch_rows = len(batch)
+                total_rows += batch_rows
 
-                if batch_count == 1:
-                    logger.info(f"Processing first batch: {len(batch)} rows")
-                elif batch_count % 10 == 0:
-                    logger.info(
-                        f"Processed {batch_count} batches, {total_rows} rows so far"
-                    )
+                logger.info(
+                    f"Batch {batch_count}: {batch_rows} rows (total so far: {total_rows})"
+                )
 
                 # Convert batch to requested format
+                chunks_from_batch = 0
                 if extension == "csv":
-                    yield from self._arrow_to_csv(batch, include_header=first_chunk)
+                    for chunk in self._arrow_to_csv(batch, include_header=first_chunk):
+                        chunks_from_batch += 1
+                        total_chunks_yielded += 1
+                        logger.info(
+                            f"  Yielding CSV chunk {chunks_from_batch} from batch {batch_count} "
+                            f"(size: {len(chunk)} bytes)"
+                        )
+                        yield chunk
 
                 elif extension == "json":
-                    yield from self._arrow_to_json(batch, first_chunk=first_chunk)
+                    for chunk in self._arrow_to_json(batch, first_chunk=first_chunk):
+                        chunks_from_batch += 1
+                        total_chunks_yielded += 1
+                        yield chunk
 
                 elif extension == "parquet":
-                    yield from self._arrow_to_parquet(batch)
+                    for chunk in self._arrow_to_parquet(batch):
+                        chunks_from_batch += 1
+                        total_chunks_yielded += 1
+                        logger.info(
+                            f"  Yielding Parquet chunk {chunks_from_batch} from batch {batch_count} "
+                            f"(size: {len(chunk)} bytes)"
+                        )
+                        yield chunk
 
+                logger.info(
+                    f"Batch {batch_count} complete: yielded {chunks_from_batch} chunks"
+                )
                 first_chunk = False
 
             # Handle empty results - yield headers/structure for empty data
@@ -172,9 +218,18 @@ class DataStreamService:
             elif extension == "json" and not first_chunk:
                 yield b"\n]"
 
+            # Build filter description for final log
+            filters = []
+            if organisation_entity:
+                filters.append(f"organisation-entity={organisation_entity}")
+            if quality:
+                filters.append(f"quality={quality}")
+            filter_desc = ", ".join(filters) if filters else "none"
+
             logger.info(
                 f"Successfully streamed {dataset}: {batch_count} batches, {total_rows} rows, "
-                f"format={extension}, filter={organisation_entity or 'none'}"
+                f"{total_chunks_yielded} chunks yielded, "
+                f"format={extension}, filters={filter_desc}"
             )
 
         except duckdb.IOException as e:
@@ -391,11 +446,16 @@ class DataStreamService:
 
         # If the CSV data exceeds the limit, split it into smaller chunks
         if len(csv_data) > MAX_CHUNK_SIZE:
+            # Count lines before splitting for verification
+            total_lines = csv_data.count(b"\n")
             logger.warning(
-                f"CSV batch size ({len(csv_data)} bytes) exceeds Lambda limit. "
+                f"CSV batch size ({len(csv_data)} bytes, {total_lines} lines) exceeds Lambda limit. "
                 f"Splitting into smaller chunks."
             )
+
             # Split the CSV data into chunks, ensuring we don't break in the middle of a line
+            chunks_created = 0
+            lines_in_chunks = 0
             start = 0
             while start < len(csv_data):
                 end = start + MAX_CHUNK_SIZE
@@ -408,8 +468,25 @@ class DataStreamService:
                         end = last_newline + 1  # Include the newline
 
                 chunk = csv_data[start:end]
+                chunks_created += 1
+                lines_in_chunk = chunk.count(b"\n")
+                lines_in_chunks += lines_in_chunk
+                logger.info(
+                    f"  CSV sub-chunk {chunks_created}: {len(chunk)} bytes, {lines_in_chunk} lines"
+                )
                 yield chunk
                 start = end
+
+            # Verify no lines were lost
+            if lines_in_chunks != total_lines:
+                logger.error(
+                    f"LINE LOSS DETECTED: Original {total_lines} lines, "
+                    f"but chunks contain {lines_in_chunks} lines!"
+                )
+            else:
+                logger.info(
+                    f"CSV split verification: {lines_in_chunks} lines across {chunks_created} sub-chunks (OK)"
+                )
         else:
             yield csv_data
 

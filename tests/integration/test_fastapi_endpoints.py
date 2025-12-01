@@ -147,6 +147,14 @@ class TestErrorHandling:
 
         assert response.status_code in [404, 422]
 
+    def test_invalid_quality_value_returns_422(self, client):
+        """Test invalid quality parameter value returns validation error."""
+        response = client.get("/test-dataset.csv?quality=invalid")
+
+        assert response.status_code == 422  # FastAPI validation error
+        error_detail = response.json()["detail"]
+        assert any("quality" in str(error).lower() for error in error_detail)
+
 
 class TestConcurrentRequests:
     """Tests for concurrent request handling."""

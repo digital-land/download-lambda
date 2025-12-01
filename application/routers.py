@@ -42,6 +42,11 @@ async def download_dataset(
         description="Filter dataset by organisation entity",
         examples=["org-123", "company-abc"],
     ),
+    quality: Optional[Literal["", "some", "authoritative"]] = Query(
+        None,
+        description="Filter dataset by quality value (allowed: '', 'some', 'authoritative')",
+        examples=["some", "authoritative", ""],
+    ),
     data_stream_service: DataStreamService = Depends(get_data_stream_service),
 ):
     """
@@ -62,11 +67,13 @@ async def download_dataset(
 
     **Query Parameters:**
     - `organisation-entity`: Optional filter to return only rows matching this value
+    - `quality`: Optional filter to return only rows matching this quality value
 
     Args:
         dataset: Dataset name (maps to {dataset}.parquet in S3)
         extension: Output format (csv, json, or parquet)
         organisation_entity: Optional filter value for organisation-entity column
+        quality: Optional filter value for quality column
         data_stream_service: Data streaming service (injected via dependency)
 
     Returns:
@@ -78,9 +85,17 @@ async def download_dataset(
         HTTPException 500: Server error during processing
     """
     try:
+        # Build filter description for logging
+        filters = []
+        if organisation_entity:
+            filters.append(f"organisation-entity={organisation_entity}")
+        if quality:
+            filters.append(f"quality={quality}")
+        filter_desc = ", ".join(filters) if filters else "none"
+
         logger.info(
             f"Processing download: dataset={dataset}, "
-            f"format={extension}, filter={organisation_entity}"
+            f"format={extension}, filters={filter_desc}"
         )
 
         # Check if dataset exists before streaming
@@ -123,6 +138,7 @@ async def download_dataset(
                     dataset=dataset,
                     extension=extension,
                     organisation_entity=organisation_entity,
+                    quality=quality,
                 ):
                     yield chunk
                     chunk_count += 1
