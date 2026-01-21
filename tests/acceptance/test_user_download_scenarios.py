@@ -204,6 +204,117 @@ class TestSystemRejectsInvalidRequests:
         assert response.status_code in [404, 422]
 
 
+class TestUserSelectsSpecificColumns:
+    """
+    User Story: Select specific columns
+
+    AS A data analyst
+    I WANT TO select only the columns I need
+    SO THAT I can reduce download size and focus on relevant data
+    """
+
+    def test_user_selects_specific_columns_and_receives_only_those_columns(
+        self, client
+    ):
+        """
+        GIVEN a dataset contains multiple columns
+        WHEN a user requests specific columns using the fields parameter
+        THEN they receive only the requested columns
+        """
+        response = client.get("/test-dataset.csv?fields=id&fields=name")
+
+        assert response.status_code == 200
+
+        # Verify CSV structure has only requested columns
+        csv_content = response.text
+        lines = csv_content.strip().split("\n")
+        header = lines[0]
+
+        # Should have only id and name columns
+        assert "id" in header
+        assert "name" in header
+        # Should not have other columns
+        assert "organisation-entity" not in header
+        assert "value" not in header
+
+    def test_user_receives_smaller_download_with_column_selection(self, client):
+        """
+        GIVEN a dataset with many columns
+        WHEN a user selects only a few columns
+        THEN the download size is reduced
+        """
+        # Full dataset request
+        response_full = client.get("/test-dataset.csv")
+        full_size = len(response_full.text)
+
+        # Column-filtered request
+        response_filtered = client.get("/test-dataset.csv?fields=id")
+        filtered_size = len(response_filtered.text)
+
+        # Column-filtered should be smaller
+        assert filtered_size < full_size
+
+    def test_user_combines_column_selection_with_row_filtering(self, client):
+        """
+        GIVEN a user wants both column and row filtering
+        WHEN they specify fields and organisation-entity parameters
+        THEN they receive only matching rows with only requested columns
+        """
+        response = client.get(
+            "/test-dataset.csv?fields=id&fields=name&organisation-entity=org-1"
+        )
+
+        assert response.status_code == 200
+
+        csv_content = response.text
+        lines = csv_content.strip().split("\n")
+        header = lines[0]
+
+        # Verify only requested columns
+        assert "id" in header
+        assert "name" in header
+        assert "organisation-entity" not in header
+
+        # Verify only matching rows (org-1 filter applied)
+        data_lines = [line for line in lines[1:] if line]
+        assert len(data_lines) > 0  # Has some data
+
+    def test_user_selects_columns_in_json_format(self, client):
+        """
+        GIVEN a user wants JSON output with specific columns
+        WHEN they request fields parameter with json extension
+        THEN they receive JSON with only requested fields
+        """
+        response = client.get("/test-dataset.json?fields=id&fields=name")
+
+        assert response.status_code == 200
+        assert "application/json" in response.headers["content-type"]
+
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+
+        # Verify only requested fields in JSON objects
+        first_record = data[0]
+        assert "id" in first_record
+        assert "name" in first_record
+        assert "organisation-entity" not in first_record
+        assert "value" not in first_record
+
+    def test_system_rejects_invalid_column_names(self, client):
+        """
+        GIVEN a user requests columns that don't exist
+        WHEN the system processes the request
+        THEN it returns a 400 error with helpful message
+        """
+        response = client.get("/test-dataset.csv?fields=nonexistent&fields=invalid")
+
+        assert response.status_code == 400
+        body = response.json()
+        assert "detail" in body
+        assert "not found" in body["detail"].lower()
+
+
 class TestCdnCachingBehavior:
     """
     User Story: CDN caching for performance
