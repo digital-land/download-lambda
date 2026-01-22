@@ -221,7 +221,7 @@ class TestUserSelectsSpecificColumns:
         WHEN a user requests specific columns using the fields parameter
         THEN they receive only the requested columns
         """
-        response = client.get("/test-dataset.csv?fields=id&fields=name")
+        response = client.get("/test-dataset.csv?field=id&field=name")
 
         assert response.status_code == 200
 
@@ -248,7 +248,7 @@ class TestUserSelectsSpecificColumns:
         full_size = len(response_full.text)
 
         # Column-filtered request
-        response_filtered = client.get("/test-dataset.csv?fields=id")
+        response_filtered = client.get("/test-dataset.csv?field=id")
         filtered_size = len(response_filtered.text)
 
         # Column-filtered should be smaller
@@ -261,7 +261,7 @@ class TestUserSelectsSpecificColumns:
         THEN they receive only matching rows with only requested columns
         """
         response = client.get(
-            "/test-dataset.csv?fields=id&fields=name&organisation-entity=org-1"
+            "/test-dataset.csv?field=id&field=name&organisation-entity=org-1"
         )
 
         assert response.status_code == 200
@@ -285,7 +285,7 @@ class TestUserSelectsSpecificColumns:
         WHEN they request fields parameter with json extension
         THEN they receive JSON with only requested fields
         """
-        response = client.get("/test-dataset.json?fields=id&fields=name")
+        response = client.get("/test-dataset.json?field=id&field=name")
 
         assert response.status_code == 200
         assert "application/json" in response.headers["content-type"]
@@ -307,7 +307,7 @@ class TestUserSelectsSpecificColumns:
         WHEN the system processes the request
         THEN it returns a 400 error with helpful message
         """
-        response = client.get("/test-dataset.csv?fields=nonexistent&fields=invalid")
+        response = client.get("/test-dataset.csv?field=nonexistent&field=invalid")
 
         assert response.status_code == 400
         body = response.json()

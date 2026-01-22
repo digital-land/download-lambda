@@ -97,14 +97,14 @@ curl -o output.csv "${FUNCTION_URL}/test-dataset.csv"
 curl "${FUNCTION_URL}/customers.json?organisation-entity=org-5" | jq '.[0:3]'
 
 # Test column selection
-curl "${FUNCTION_URL}/customers.csv?fields=id&fields=name&fields=email"
+curl "${FUNCTION_URL}/customers.csv?field=id&field=name&field=email"
 
 # Test combined filtering and column selection
-curl "${FUNCTION_URL}/customers.json?organisation-entity=org-5&fields=id&fields=name" | jq '.[0:3]'
+curl "${FUNCTION_URL}/customers.json?organisation-entity=org-5&field=id&field=name" | jq '.[0:3]'
 
 # Test error handling
 curl -i "${FUNCTION_URL}/nonexistent.csv"  # Returns 404
-curl -i "${FUNCTION_URL}/test-dataset.csv?fields=invalid"  # Returns 400
+curl -i "${FUNCTION_URL}/test-dataset.csv?field=invalid"  # Returns 400
 ```
 
 ## Troubleshooting

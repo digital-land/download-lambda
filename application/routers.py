@@ -47,7 +47,7 @@ async def download_dataset(
         description="Filter dataset by quality value (allowed: '', 'some', 'authoritative')",
         examples=["some", "authoritative", ""],
     ),
-    fields: Optional[List[str]] = Query(
+    field: Optional[List[str]] = Query(
         None,
         description="Comma-separated list of column names to return (e.g., organisation,name)",
         examples=[["organisation", "name"], ["entity", "reference"]],
@@ -73,14 +73,14 @@ async def download_dataset(
     **Query Parameters:**
     - `organisation-entity`: Optional filter to return only rows matching this value
     - `quality`: Optional filter to return only rows matching this quality value
-    - `fields`: Optional list of column names to return (e.g., ['organisation', 'name'])
+    - `field`: Optional list of column names to include in the output (e.g., ['organisation', 'name'])
 
     Args:
         dataset: Dataset name (maps to {dataset}.parquet in S3)
         extension: Output format (csv, json, or parquet)
         organisation_entity: Optional filter value for organisation-entity column
         quality: Optional filter value for quality column
-        fields: Optional list of column names to include in the output
+        field: Optional list of column names to include in the output
         data_stream_service: Data streaming service (injected via dependency)
 
     Returns:
@@ -98,8 +98,8 @@ async def download_dataset(
             filters.append(f"organisation-entity={organisation_entity}")
         if quality:
             filters.append(f"quality={quality}")
-        if fields:
-            filters.append(f"fields={','.join(fields)}")
+        if field:
+            filters.append(f"field={','.join(field)}")
         filter_desc = ", ".join(filters) if filters else "none"
 
         logger.info(
@@ -126,8 +126,8 @@ async def download_dataset(
                 detail="Server error: Unable to initialize data processing engine",
             )
 
-        # Validate fields if specified
-        if fields:
+        # Validate field if specified
+        if field:
             try:
                 s3_uri = data_stream_service.s3_service.get_s3_uri(dataset)
                 test_conn = data_stream_service._get_duckdb_conn()
@@ -135,7 +135,7 @@ async def download_dataset(
                     f"SELECT * FROM read_parquet('{s3_uri}') LIMIT 0"
                 )
                 available_columns = [col[0] for col in schema_check.description]
-                invalid_fields = [f for f in fields if f not in available_columns]
+                invalid_fields = [f for f in field if f not in available_columns]
                 if invalid_fields:
                     logger.error(
                         f"Invalid fields requested for {dataset}: {', '.join(invalid_fields)}"
@@ -176,7 +176,7 @@ async def download_dataset(
                     extension=extension,
                     organisation_entity=organisation_entity,
                     quality=quality,
-                    fields=fields,
+                    field=field,
                 ):
                     yield chunk
                     chunk_count += 1

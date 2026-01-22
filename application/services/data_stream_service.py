@@ -66,7 +66,7 @@ class DataStreamService:
         extension: str,
         organisation_entity: Optional[str] = None,
         quality: Optional[str] = None,
-        fields: Optional[List[str]] = None,
+        field: Optional[List[str]] = None,
         chunk_size: int = 2000,
     ) -> Generator[bytes, None, None]:
         """
@@ -83,7 +83,7 @@ class DataStreamService:
             extension: Output format extension (csv, json, parquet)
             organisation_entity: Organisation entity code to filter by (None = no filtering)
             quality: Quality value to filter by (None = no filtering)
-            fields: List of column names to include in output (None = all columns)
+            field: List of column names to include in output (None = all columns)
             chunk_size: Number of rows to process at a time
 
         Yields:
@@ -104,12 +104,12 @@ class DataStreamService:
             s3_uri = self.s3_service.get_s3_uri(dataset)
             logger.info(f"Reading from S3 URI: {s3_uri}")
 
-            # Build SELECT clause - select specific fields or all columns
-            if fields:
+            # Build SELECT clause - select specific field or all columns
+            if field:
                 # Quote column names that might contain special characters
-                select_cols = ", ".join([f'"{col}"' for col in fields])
+                select_cols = ", ".join([f'"{col}"' for col in field])
                 select_clause = select_cols
-                logger.info(f"Selecting specific columns: {', '.join(fields)}")
+                logger.info(f"Selecting specific columns: {', '.join(field)}")
             else:
                 select_clause = "*"
 
@@ -142,7 +142,7 @@ class DataStreamService:
                                 else None
                             ),
                             f"quality={quality}" if quality else None,
-                            f"fields={','.join(fields)}" if fields else None,
+                            f"field={','.join(field)}" if field else None,
                         ]
                         if f
                     ]
@@ -152,9 +152,9 @@ class DataStreamService:
                 )
             else:
                 query = f"SELECT {select_clause} FROM read_parquet('{s3_uri}')"
-                if fields:
+                if field:
                     logger.info(
-                        f"Streaming with column selection: {', '.join(fields)}, format={extension}"
+                        f"Streaming with column selection: {', '.join(field)}, format={extension}"
                     )
                 else:
                     logger.info(f"Streaming without filters, format={extension}")
