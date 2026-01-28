@@ -28,7 +28,7 @@ import io
 import json
 import logging
 import os
-from typing import Optional, Generator
+from typing import Optional, Generator, List
 
 import duckdb
 import pyarrow as pa
@@ -66,6 +66,7 @@ class DataStreamService:
         extension: str,
         organisation_entity: Optional[str] = None,
         quality: Optional[str] = None,
+        field: Optional[List[str]] = None,
         chunk_size: int = 2000,
     ) -> Generator[bytes, None, None]:
         """
@@ -82,6 +83,7 @@ class DataStreamService:
             extension: Output format extension (csv, json, parquet)
             organisation_entity: Organisation entity code to filter by (None = no filtering)
             quality: Quality value to filter by (None = no filtering)
+            field: List of column names to include in output (None = all columns)
             chunk_size: Number of rows to process at a time
 
         Yields:
@@ -102,6 +104,15 @@ class DataStreamService:
             s3_uri = self.s3_service.get_s3_uri(dataset)
             logger.info(f"Reading from S3 URI: {s3_uri}")
 
+            # Build SELECT clause - select specific field or all columns
+            if field:
+                # Quote column names that might contain special characters
+                select_cols = ", ".join([f'"{col}"' for col in field])
+                select_clause = select_cols
+                logger.info(f"Selecting specific columns: {', '.join(field)}")
+            else:
+                select_clause = "*"
+
             # Build query with optional filters
             where_clauses = []
             params = []
@@ -117,7 +128,7 @@ class DataStreamService:
             if where_clauses:
                 where_clause = " AND ".join(where_clauses)
                 query = f"""
-                    SELECT * FROM read_parquet('{s3_uri}')
+                    SELECT {select_clause} FROM read_parquet('{s3_uri}')
                     WHERE {where_clause}
                 """
                 # Build readable filter description for logging
@@ -131,6 +142,7 @@ class DataStreamService:
                                 else None
                             ),
                             f"quality={quality}" if quality else None,
+                            f"field={','.join(field)}" if field else None,
                         ]
                         if f
                     ]
@@ -139,8 +151,13 @@ class DataStreamService:
                     f"Streaming with filters: {filter_desc}, format={extension}"
                 )
             else:
-                query = f"SELECT * FROM read_parquet('{s3_uri}')"
-                logger.info(f"Streaming without filters, format={extension}")
+                query = f"SELECT {select_clause} FROM read_parquet('{s3_uri}')"
+                if field:
+                    logger.info(
+                        f"Streaming with column selection: {', '.join(field)}, format={extension}"
+                    )
+                else:
+                    logger.info(f"Streaming without filters, format={extension}")
 
             # Execute query and fetch Arrow record batch reader
             logger.info(f"Executing DuckDB query with chunk_size={chunk_size}")
@@ -261,8 +278,23 @@ class DataStreamService:
             ) from e
 
         except duckdb.Error as e:
-            logger.error(f"DuckDB error processing {dataset}: {str(e)}")
-            raise Exception(f"DuckDB processing error: {str(e)}") from e
+            error_msg = str(e)
+            # Handle column not found errors with a clearer message
+            if "Binder Error" in error_msg and "not found" in error_msg:
+                # Extract suggested columns from error message if available
+                if "Candidate bindings:" in error_msg:
+                    logger.error(f"Column not found error for {dataset}: {error_msg}")
+                    raise ValueError(
+                        f"One or more requested columns not found in dataset. {error_msg}"
+                    ) from e
+                else:
+                    logger.error(f"Column not found error for {dataset}: {error_msg}")
+                    raise ValueError(
+                        "One or more requested columns not found in dataset"
+                    ) from e
+            # Handle other DuckDB errors
+            logger.error(f"DuckDB error processing {dataset}: {error_msg}")
+            raise Exception(f"DuckDB processing error: {error_msg}") from e
 
         except Exception as e:
             logger.error(f"Error processing {dataset}: {str(e)}", exc_info=True)

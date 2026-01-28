@@ -7,6 +7,7 @@ A high-performance Lambda function that streams filtered dataset downloads from 
 - **DuckDB-Powered**: Ultra-efficient S3 Parquet processing with filter pushdown
 - **FastAPI-style Parameter Validation**: Uses Pydantic models for path and query parameter validation
 - **Direct S3 Streaming**: Reads only necessary data from S3, no full file downloads
+- **Column Selection**: Select specific columns to reduce download size and bandwidth
 - **Multiple Output Formats**: Supports CSV, JSON, and Parquet output formats
 - **CloudFront Integration**: Built to work with Lambda Function URLs and CloudFront CDN
 - **Path Traversal Protection**: Validates dataset names to prevent security vulnerabilities
@@ -16,7 +17,7 @@ A high-performance Lambda function that streams filtered dataset downloads from 
 ## URL Format
 
 ```
-GET /{dataset}.{extension}?organisation-entity={value}&quality={value}
+GET /{dataset}.{extension}?organisation-entity={value}&quality={value}&field={column1}&field={column2}
 ```
 
 ### Path Parameters
@@ -28,6 +29,7 @@ GET /{dataset}.{extension}?organisation-entity={value}&quality={value}
 
 - `organisation-entity` (optional): Filter data by organisation entity value
 - `quality` (optional): Filter data by quality value. Allowed values: `""` (empty string), `"some"`, `"authoritative"`
+- `field` (optional): Select specific columns to include in output. Can be specified multiple times for multiple columns (e.g., `?field=id&field=name`)
 
 Multiple filters can be combined and will be applied with AND logic.
 
@@ -45,6 +47,12 @@ GET /conservation-area.csv?quality=some
 
 # Download with multiple filters (AND logic)
 GET /conservation-area.parquet?organisation-entity=122&quality=authoritative
+
+# Select specific columns only
+GET /conservation-area.csv?field=entity&field=name&field=geometry
+
+# Combine row filtering and column selection
+GET /conservation-area.json?organisation-entity=122&field=entity&field=reference&field=name
 ```
 
 ## Project Structure

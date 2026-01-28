@@ -50,6 +50,8 @@ This Lambda function provides a scalable, secure solution for streaming filtered
 GET /{dataset}.csv                                    # Full dataset
 GET /{dataset}.json?organisation-entity=acme-corp    # Filtered JSON
 GET /{dataset}.parquet?organisation-entity=org-1     # Filtered Parquet
+GET /{dataset}.csv?field=id&field=name             # Column selection
+GET /{dataset}.json?organisation-entity=org-1&field=id&field=name  # Combined filters
 ```
 
 **Request Flow:**
@@ -223,6 +225,14 @@ extension: Literal["csv", "json", "parquet"]
 organisation-entity: Optional[str]
 - Validated for SQL injection patterns
 - Sanitized before filtering
+
+quality: Optional[Literal["", "some", "authoritative"]]
+- Validated against allowed values only
+
+field: Optional[List[str]]
+- Column names for selective output
+- Validated against dataset schema
+- Reduces bandwidth and processing
 ```
 
 ### Data Security
