@@ -156,6 +156,56 @@ class TestErrorHandling:
         assert any("quality" in str(error).lower() for error in error_detail)
 
 
+class TestFieldParameter:
+    """Tests for the field query parameter (column selection)."""
+
+    def test_valid_fields_returns_only_requested_columns(self, client):
+        """Test that valid field params return only those columns."""
+        response = client.get("/test-dataset.csv?field=id&field=name")
+
+        assert response.status_code == 200
+        lines = response.text.strip().split("\n")
+        header = lines[0]
+        assert "id" in header
+        assert "name" in header
+        assert "value" not in header
+        assert "category" not in header
+
+    def test_missing_columns_silently_ignored(self, client):
+        """Test that columns that don't exist in the dataset are silently dropped."""
+        response = client.get("/test-dataset.csv?field=id&field=nonexistent-column")
+
+        assert response.status_code == 200
+        lines = response.text.strip().split("\n")
+        header = lines[0]
+        assert "id" in header
+        assert "nonexistent-column" not in header
+
+    def test_all_missing_columns_returns_400(self, client):
+        """Test that requesting only non-existent columns returns 400."""
+        response = client.get(
+            "/test-dataset.csv?field=nonexistent-one&field=nonexistent-two"
+        )
+
+        assert response.status_code == 400
+        detail = response.json()["detail"]
+        assert "not found" in detail.lower()
+        assert "nonexistent-one" in detail or "nonexistent-two" in detail
+
+    def test_missing_columns_ignored_in_json(self, client):
+        """Test that missing columns are silently dropped in JSON output."""
+        response = client.get(
+            "/test-dataset.json?field=id&field=name&field=mineral-planning-authorities"
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) > 0
+        assert "id" in data[0]
+        assert "name" in data[0]
+        assert "mineral-planning-authorities" not in data[0]
+
+
 class TestConcurrentRequests:
     """Tests for concurrent request handling."""
 
