@@ -104,9 +104,8 @@ class DataStreamService:
             s3_uri = self.s3_service.get_s3_uri(dataset)
             logger.info(f"Reading from S3 URI: {s3_uri}")
 
-            # Build SELECT clause - select specific field or all columns
+            # Build SELECT clause - select specific columns or all
             if field:
-                # Quote column names that might contain special characters
                 select_cols = ", ".join([f'"{col}"' for col in field])
                 select_clause = select_cols
                 logger.info(f"Selecting specific columns: {', '.join(field)}")
@@ -304,6 +303,19 @@ class DataStreamService:
             # Don't close connection - we reuse it for faster TTFB on next request
             # Connection will be cleaned up when Lambda container is recycled
             pass
+
+    def _get_available_columns(
+        self, conn: duckdb.DuckDBPyConnection, s3_uri: str
+    ) -> set:
+        """
+        Return the set of column names available in a Parquet file.
+
+        Reads only Parquet metadata (no row data) so this is very cheap.
+        """
+        result = conn.execute(
+            f"SELECT column_name FROM (DESCRIBE SELECT * FROM read_parquet('{s3_uri}'))"
+        )
+        return {row[0] for row in result.fetchall()}
 
     def _get_or_create_conn(self) -> duckdb.DuckDBPyConnection:
         """

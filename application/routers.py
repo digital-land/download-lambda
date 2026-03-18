@@ -117,8 +117,7 @@ async def download_dataset(
         # Test DuckDB connection before starting stream
         # This ensures any configuration errors are caught early
         try:
-            test_conn = data_stream_service._get_duckdb_conn()
-            test_conn.close()
+            conn = data_stream_service._get_or_create_conn()
         except Exception as e:
             logger.error(f"Failed to initialize DuckDB connection: {e}", exc_info=True)
             raise HTTPException(
@@ -126,33 +125,27 @@ async def download_dataset(
                 detail="Server error: Unable to initialize data processing engine",
             )
 
-        # Validate field if specified
+        # Validate and filter requested fields before streaming starts so we
+        # can return a proper 400 instead of failing mid-stream
         if field:
-            try:
-                s3_uri = data_stream_service.s3_service.get_s3_uri(dataset)
-                test_conn = data_stream_service._get_duckdb_conn()
-                schema_check = test_conn.execute(
-                    f"SELECT * FROM read_parquet('{s3_uri}') LIMIT 0"
+            s3_uri = data_stream_service.s3_service.get_s3_uri(dataset)
+            available_columns = data_stream_service._get_available_columns(conn, s3_uri)
+            valid_fields = [f for f in field if f in available_columns]
+            missing_fields = [f for f in field if f not in available_columns]
+
+            if missing_fields:
+                logger.info(
+                    f"Ignoring missing columns for {dataset}: {', '.join(missing_fields)}"
                 )
-                available_columns = [col[0] for col in schema_check.description]
-                invalid_fields = [f for f in field if f not in available_columns]
-                if invalid_fields:
-                    logger.error(
-                        f"Invalid fields requested for {dataset}: {', '.join(invalid_fields)}"
-                    )
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Column(s) not found in dataset: {', '.join(invalid_fields)}. "
-                        f"Available columns: {', '.join(available_columns)}",
-                    )
-            except HTTPException:
-                raise
-            except Exception as e:
-                logger.error(f"Failed to validate fields: {e}", exc_info=True)
+
+            if not valid_fields:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Failed to validate requested columns: {str(e)}",
+                    detail=f"Column(s) not found in dataset: {', '.join(field)}. "
+                    f"Available columns: {', '.join(sorted(available_columns))}",
                 )
+
+            field = valid_fields
 
         # Get response metadata
         filename = get_filename(dataset, extension)
