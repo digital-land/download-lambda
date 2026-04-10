@@ -13,6 +13,7 @@ The same application can run:
 import logging
 import os
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from application.routers import router
@@ -30,6 +31,20 @@ app = FastAPI(
     version="2.0.0",
     docs_url="/docs" if os.getenv("ENVIRONMENT") == "development" else None,
     redoc_url="/redoc" if os.getenv("ENVIRONMENT") == "development" else None,
+)
+
+# Configure CORS
+# Matches provide.planning.data.gov.uk and subdomains (staging, development)
+_cors_regex = r"https://provide(\.(staging|development))?\.planning\.data\.gov\.uk"
+if os.getenv("ENVIRONMENT") != "production":
+    _cors_regex += r"|http://localhost(:\d+)?"
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=_cors_regex,
+    allow_methods=["GET"],
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # Include API routes
