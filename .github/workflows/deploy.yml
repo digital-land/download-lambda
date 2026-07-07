@@ -104,6 +104,7 @@ jobs:
           function-name: ${{ matrix.environment }}-download-lambda
           package-type: Image
           image-uri: ${{ steps.build-and-publish.outputs.image_uri }}
+          timeout: 60
 
       - name: Deployment Summary
         run: |
