@@ -139,7 +139,7 @@ docker-compose -f docker-compose.test.yml down
 
 ```bash
 # Install development dependencies (includes testcontainers)
-pip install -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt
 
 # Run integration tests
 pytest tests/integration/test_lambda_streaming.py -v

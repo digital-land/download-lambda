@@ -1,12 +1,336 @@
--r requirements.txt
-pytest==8.3.0
-pytest-cov==5.0.0
-pytest-mock==3.14.0
-moto[server,s3]==5.0.0
+annotated-types==0.7.0
+    # via
+    #   -c requirements.txt
+    #   pydantic
+anyio==4.14.2
+    # via
+    #   -c requirements.txt
+    #   httpx
+attrs==26.1.0
+    # via
+    #   jsonschema
+    #   jsonschema-path
+    #   referencing
+aws-sam-translator==1.106.0
+    # via cfn-lint
+aws-xray-sdk==2.15.0
+    # via moto
 black==24.8.0
+    # via -r requirements-dev.in
+blinker==1.9.0
+    # via flask
+boto3==1.35.0
+    # via
+    #   -c requirements.txt
+    #   aws-sam-translator
+    #   moto
+botocore==1.35.99
+    # via
+    #   -c requirements.txt
+    #   aws-xray-sdk
+    #   boto3
+    #   moto
+    #   s3transfer
+build==1.5.1
+    # via pip-tools
+certifi==2026.6.17
+    # via
+    #   httpcore
+    #   httpx
+    #   requests
+cffi==2.1.0
+    # via cryptography
+cfgv==3.5.0
+    # via pre-commit
+cfn-lint==1.47.1
+    # via moto
+charset-normalizer==3.4.9
+    # via requests
+click==8.4.2
+    # via
+    #   -c requirements.txt
+    #   black
+    #   flask
+    #   pip-tools
+coverage==7.15.1
+    # via pytest-cov
+cryptography==49.0.0
+    # via
+    #   moto
+    #   python-jose
+    #   sshpubkeys
+distlib==0.4.3
+    # via virtualenv
+docker==7.2.0
+    # via
+    #   moto
+    #   testcontainers
+ecdsa==0.19.2
+    # via
+    #   moto
+    #   python-jose
+    #   sshpubkeys
+filelock==3.29.7
+    # via
+    #   python-discovery
+    #   virtualenv
 flake8==7.1.1
-pandas==2.2.2
-pre-commit==3.8.0
+    # via -r requirements-dev.in
+flask==3.1.3
+    # via
+    #   flask-cors
+    #   moto
+flask-cors==6.0.5
+    # via moto
+graphql-core==3.2.11
+    # via moto
+h11==0.16.0
+    # via
+    #   -c requirements.txt
+    #   httpcore
+httpcore==1.0.9
+    # via httpx
 httpx==0.27.2
-testcontainers==4.8.2
+    # via -r requirements-dev.in
+identify==2.6.19
+    # via pre-commit
+idna==3.18
+    # via
+    #   -c requirements.txt
+    #   anyio
+    #   httpx
+    #   requests
+iniconfig==2.3.0
+    # via pytest
+itsdangerous==2.2.0
+    # via flask
+jinja2==3.1.6
+    # via
+    #   flask
+    #   moto
+jmespath==1.1.0
+    # via
+    #   -c requirements.txt
+    #   boto3
+    #   botocore
+jsondiff==2.2.1
+    # via moto
+jsonpatch==1.33
+    # via cfn-lint
+jsonpointer==3.1.1
+    # via jsonpatch
+jsonschema==4.26.0
+    # via
+    #   aws-sam-translator
+    #   openapi-schema-validator
+    #   openapi-spec-validator
+jsonschema-path==0.5.0
+    # via openapi-spec-validator
+jsonschema-specifications==2025.9.1
+    # via
+    #   jsonschema
+    #   openapi-schema-validator
+lazy-object-proxy==1.12.0
+    # via openapi-spec-validator
+markupsafe==3.0.3
+    # via
+    #   flask
+    #   jinja2
+    #   werkzeug
+mccabe==0.7.0
+    # via flake8
+moto==5.0.0
+    # via -r requirements-dev.in
+mpmath==1.3.0
+    # via sympy
+mypy-extensions==1.1.0
+    # via black
+networkx==3.6.1
+    # via cfn-lint
+nodeenv==1.10.0
+    # via pre-commit
+numpy==2.5.1
+    # via
+    #   -c requirements.txt
+    #   pandas
+openapi-schema-validator==0.9.0
+    # via openapi-spec-validator
+openapi-spec-validator==0.9.0
+    # via moto
+packaging==26.2
+    # via
+    #   black
+    #   build
+    #   pytest
+    #   wheel
+pandas==2.2.2
+    # via -r requirements-dev.in
+pathable==0.6.0
+    # via jsonschema-path
+pathspec==1.1.1
+    # via black
+pip-tools==7.4.1
+    # via -r requirements-dev.in
+platformdirs==4.10.0
+    # via
+    #   black
+    #   python-discovery
+    #   virtualenv
+pluggy==1.6.0
+    # via pytest
+pre-commit==3.8.0
+    # via -r requirements-dev.in
+py-partiql-parser==0.5.0
+    # via moto
+pyasn1==0.6.4
+    # via
+    #   python-jose
+    #   rsa
+pycodestyle==2.12.1
+    # via flake8
+pycparser==3.0
+    # via cffi
+pydantic==2.9.0
+    # via
+    #   -c requirements.txt
+    #   aws-sam-translator
+    #   openapi-schema-validator
+    #   openapi-spec-validator
+    #   pydantic-settings
+pydantic-core==2.23.2
+    # via
+    #   -c requirements.txt
+    #   pydantic
+pydantic-settings==2.14.2
+    # via
+    #   openapi-schema-validator
+    #   openapi-spec-validator
+pyflakes==3.2.0
+    # via flake8
+pyparsing==3.3.2
+    # via moto
+pyproject-hooks==1.2.0
+    # via
+    #   build
+    #   pip-tools
+pytest==8.3.0
+    # via
+    #   -r requirements-dev.in
+    #   pytest-cov
+    #   pytest-mock
+pytest-cov==5.0.0
+    # via -r requirements-dev.in
+pytest-mock==3.14.0
+    # via -r requirements-dev.in
+python-dateutil==2.9.0.post0
+    # via
+    #   -c requirements.txt
+    #   botocore
+    #   moto
+    #   pandas
+python-discovery==1.4.4
+    # via virtualenv
+python-dotenv==1.2.2
+    # via
+    #   -c requirements.txt
+    #   pydantic-settings
+python-jose==3.5.0
+    # via moto
+pytz==2026.2
+    # via pandas
+pyyaml==6.0.3
+    # via
+    #   -c requirements.txt
+    #   cfn-lint
+    #   jsondiff
+    #   jsonschema-path
+    #   moto
+    #   pre-commit
+    #   responses
+referencing==0.37.0
+    # via
+    #   jsonschema
+    #   jsonschema-path
+    #   jsonschema-specifications
+    #   openapi-schema-validator
+regex==2026.7.10
+    # via cfn-lint
 requests==2.32.3
+    # via
+    #   -r requirements-dev.in
+    #   docker
+    #   moto
+    #   responses
+responses==0.26.2
+    # via moto
+rfc3339-validator==0.1.4
+    # via openapi-schema-validator
+rpds-py==2026.6.3
+    # via
+    #   jsonschema
+    #   referencing
+rsa==4.9.1
+    # via python-jose
+s3transfer==0.10.4
+    # via
+    #   -c requirements.txt
+    #   boto3
+six==1.17.0
+    # via
+    #   -c requirements.txt
+    #   ecdsa
+    #   python-dateutil
+    #   rfc3339-validator
+sniffio==1.3.1
+    # via httpx
+sshpubkeys==3.3.1
+    # via moto
+sympy==1.14.0
+    # via cfn-lint
+testcontainers==4.8.2
+    # via -r requirements-dev.in
+typing-extensions==4.16.0
+    # via
+    #   -c requirements.txt
+    #   anyio
+    #   aws-sam-translator
+    #   cfn-lint
+    #   pydantic
+    #   pydantic-core
+    #   referencing
+    #   testcontainers
+    #   typing-inspection
+typing-inspection==0.4.2
+    # via pydantic-settings
+tzdata==2026.3
+    # via
+    #   -c requirements.txt
+    #   pandas
+    #   pydantic
+urllib3==2.7.0
+    # via
+    #   -c requirements.txt
+    #   botocore
+    #   docker
+    #   requests
+    #   responses
+    #   testcontainers
+virtualenv==21.6.1
+    # via pre-commit
+werkzeug==3.1.8
+    # via
+    #   flask
+    #   flask-cors
+    #   moto
+wheel==0.47.0
+    # via pip-tools
+wrapt==2.2.2
+    # via
+    #   aws-xray-sdk
+    #   testcontainers
+xmltodict==1.0.4
+    # via moto
+
+# The following packages are considered to be unsafe in a requirements file:
+# pip
+# setuptools

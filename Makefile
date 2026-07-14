@@ -11,7 +11,7 @@ ifeq ($(ENV),prod)
 	pip install -r requirements.txt
 else
 	@echo "📦 Installing development requirements (includes testcontainers, pytest, etc.)..."
-	pip install -r requirements-dev.txt
+	pip install -r requirements.txt -r requirements-dev.txt
 	pre-commit install
 	@echo ""
 	@echo "🐳 Building Lambda Docker image for local testing..."

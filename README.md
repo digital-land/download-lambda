@@ -165,7 +165,7 @@ make init ENV=prod
 
 The `ENV` variable controls which requirements are installed:
 - `ENV=local` (default):
-  - Installs `requirements-dev.txt` (includes testcontainers, pytest, black, etc.)
+  - Installs `requirements.txt` and `requirements-dev.txt` (includes testcontainers, pytest, black, etc.)
   - Builds Lambda Docker image (`download-lambda:test`) for integration tests
   - Sets up pre-commit hooks
 - `ENV=prod`: Installs `requirements.txt` only (production dependencies)

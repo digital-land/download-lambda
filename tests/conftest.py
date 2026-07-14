@@ -32,12 +32,12 @@ def project_root() -> Path:
 def mock_env_vars(monkeypatch):
     """Set up mock environment variables for the application."""
     monkeypatch.setenv("DATASET_BUCKET", "test-bucket")
-    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://localhost:5000")
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://localhost:5099")
     monkeypatch.setenv("ENVIRONMENT", "test")
 
     return {
         "DATASET_BUCKET": "test-bucket",
-        "AWS_ENDPOINT_URL": "http://localhost:5000",
+        "AWS_ENDPOINT_URL": "http://localhost:5099",
     }
 
 
@@ -90,8 +90,9 @@ def moto_server():
     This is necessary because DuckDB's httpfs extension makes real HTTP requests,
     so we need an actual HTTP server rather than just mocking boto3 calls.
     """
-    # Start moto server on localhost:5000
-    server = ThreadedMotoServer(port="5000", verbose=False)
+    # Start moto server on localhost:5099 (5000 conflicts with macOS Control Center /
+    # AirPlay Receiver, which claims it by default)
+    server = ThreadedMotoServer(port="5099", verbose=False)
     server.start()
 
     # Wait for server to be ready
@@ -123,7 +124,7 @@ def s3_mock(aws_credentials, moto_server):
     # Point boto3 to the moto server
     s3_client = boto3.client(
         "s3",
-        endpoint_url="http://localhost:5000",
+        endpoint_url="http://localhost:5099",
         region_name="us-east-1",
         aws_access_key_id="testing",
         aws_secret_access_key="testing",
