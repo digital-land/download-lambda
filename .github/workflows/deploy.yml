@@ -98,21 +98,17 @@ jobs:
 
           echo "image_uri=$DOCKER_REPO:${{ steps.vars.outputs.release_tag }}" >> $GITHUB_OUTPUT
 
-      # Using appleboy/lambda-action instead of the official aws-actions/aws-lambda-deploy:
-      # the latter's config-diff check is unconditionally truthy (missing await), so it always
-      # calls UpdateFunctionConfiguration and touches Environment, requiring extra IAM + KMS
-      # grant permissions we don't want to hand out. Switch back once that's fixed upstream.
+      # aws-actions/aws-lambda-deploy always calls UpdateFunctionConfiguration (a bug: its
+      # config-diff check is unconditionally truthy), touching Environment on every deploy.
+      # The deploy role has lambda:UpdateFunctionConfiguration + KMS grant/encrypt/decrypt on
+      # the function's CMK to allow this. Terraform owns env vars/config; if this ever
+      # overwrites them it should surface as a loud failure or drift, not silent breakage.
       - name: Update Lambda function
-        uses: appleboy/lambda-action@v0.2.0
+        uses: aws-actions/aws-lambda-deploy@v1.1.0
         with:
-          aws_region: ${{ env.AWS_REGION }}
-          function_name: ${{ matrix.environment }}-download-lambda
-          image_uri: ${{ steps.build-and-publish.outputs.image_uri }}
-
-      - name: Wait for Lambda update to complete
-        run: |
-          aws lambda wait function-updated \
-            --function-name ${{ matrix.environment }}-download-lambda
+          function-name: ${{ matrix.environment }}-download-lambda
+          package-type: Image
+          image-uri: ${{ steps.build-and-publish.outputs.image_uri }}
 
       - name: Deployment Summary
         run: |
