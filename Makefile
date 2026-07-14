@@ -1,4 +1,4 @@
-.PHONY: init test test-unit test-integration test-acceptance test-coverage test-lambda lint format build deploy clean dev-up dev-down dev-logs dev-restart dev-rebuild dev-gen-data dev-clean
+.PHONY: init test test-unit test-integration test-acceptance test-coverage test-lambda lint format build deploy clean dev-up dev-down dev-logs dev-restart dev-rebuild dev-gen-data dev-clean upgrade
 
 # Environment variable to control which requirements to install
 # ENV=prod will install only production requirements
@@ -71,6 +71,12 @@ format:
 
 build:
 	./scripts/build.sh
+
+# Upgrade pinned dependencies to their latest allowed versions (assumes `make init`
+# has already installed pip-tools). Review the diff before committing.
+upgrade:
+	pip-compile requirements.in -o requirements.txt --upgrade
+	pip-compile requirements-dev.in -o requirements-dev.txt --upgrade
 
 # Docker Compose targets for local development
 dev-gen-data:

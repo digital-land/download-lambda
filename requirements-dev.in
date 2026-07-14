@@ -1,5 +1,5 @@
 -c requirements.txt
-pip-tools==7.4.1
+pip-tools==7.5.3
 pytest==8.3.0
 pytest-cov==5.0.0
 pytest-mock==3.14.0
