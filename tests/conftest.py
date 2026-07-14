@@ -16,7 +16,6 @@ import boto3
 from moto.server import ThreadedMotoServer
 from fastapi.testclient import TestClient
 
-
 # ============================================================================
 # Path and Environment Fixtures
 # ============================================================================

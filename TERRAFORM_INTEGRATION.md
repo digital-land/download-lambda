@@ -4,11 +4,11 @@ This guide shows how to integrate the Lambda function into your existing Terrafo
 
 ## Overview
 
-The Lambda function code lives in this repository, while your infrastructure (Lambda resource, IAM roles, etc.) is managed in your separate Terraform repository.
+The Lambda function code lives in this repository and runs as a **container image**, while your infrastructure (Lambda resource, IAM roles, ECR repository, etc.) is managed in your separate Terraform repository.
 
 ## Step-by-Step Integration
 
-### 1. Build the Lambda Package
+### 1. Build the Docker Image
 
 In this repository:
 
@@ -16,11 +16,17 @@ In this repository:
 # Run tests
 make test
 
-# Build deployment package
-make build
+# Build the image
+docker build --platform linux/amd64 -t download-lambda:latest .
 ```
 
-This creates `dist/lambda.zip`.
+Push it to your environment's ECR repository (this is handled automatically by `.github/workflows/deploy.yml` in normal use — see [DEPLOYMENT.md](docs/DEPLOYMENT.md)):
+
+```bash
+aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
+docker tag download-lambda:latest <account-id>.dkr.ecr.<region>.amazonaws.com/download-lambda:latest
+docker push <account-id>.dkr.ecr.<region>.amazonaws.com/download-lambda:latest
+```
 
 ### 2. Copy Terraform Configuration
 
@@ -42,7 +48,8 @@ module "download_lambda" {
 
   function_name       = "download-lambda-${var.environment}"
   dataset_bucket_name = var.dataset_bucket_name
-  lambda_zip_path     = "${path.module}/modules/download-lambda/lambda.zip"
+  package_type        = "Image"
+  image_uri           = "${aws_ecr_repository.download_lambda.repository_url}:latest"
 
   timeout      = 60
   memory_size  = 512
@@ -54,6 +61,16 @@ module "download_lambda" {
     Environment = var.environment
     Project     = "data-downloads"
     ManagedBy   = "Terraform"
+  }
+}
+
+# ECR repository this repo's CI/CD pushes images to
+resource "aws_ecr_repository" "download_lambda" {
+  name                 = "download-lambda-${var.environment}"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
   }
 }
 
@@ -87,6 +104,8 @@ terraform init
 terraform plan
 terraform apply
 ```
+
+Once the Lambda function and ECR repository exist, this repository's GitHub Actions workflow takes over routine code deploys — pushing new images and calling `UpdateFunctionCode` directly, without needing a `terraform apply` for every code change.
 
 ## Using with Existing S3 Bucket
 
@@ -238,33 +257,28 @@ create_cloudfront   = true
 auth_type           = "AWS_IAM"
 ```
 
-## Referencing Lambda from S3
+## Referencing the Latest Image From ECR
 
-For CI/CD workflows, store the Lambda package in S3:
+For CI/CD workflows, this repository's GitHub Actions already updates the function's code directly after every push — but if you want Terraform itself to track the current image (e.g. to detect drift), reference the ECR repository as a data source:
 
 ```hcl
-data "aws_s3_object" "lambda_package" {
-  bucket = "your-deployment-bucket"
-  key    = "lambda-builds/lambda-latest.zip"
+data "aws_ecr_image" "download_lambda" {
+  repository_name = "download-lambda-${var.environment}"
+  most_recent     = true
 }
 
 resource "aws_lambda_function" "download_function" {
   function_name = var.function_name
   role          = aws_iam_role.download_lambda_role.arn
-  handler       = "lambda_function.lambda_handler"
-  runtime       = "python3.11"
+  package_type  = "Image"
 
-  # Reference from S3 instead of local file
-  s3_bucket         = data.aws_s3_object.lambda_package.bucket
-  s3_key            = data.aws_s3_object.lambda_package.key
-  s3_object_version = data.aws_s3_object.lambda_package.version_id
-
-  # Force update when S3 object changes
-  source_code_hash = data.aws_s3_object.lambda_package.etag
+  image_uri = "${data.aws_ecr_repository.download_lambda.repository_url}@${data.aws_ecr_image.download_lambda.image_digest}"
 
   # ... rest of configuration
 }
 ```
+
+Note: since this repo's CI updates the function directly with `UpdateFunctionCode`, Terraform tracking the image this way will show drift after every deploy unless you re-run `terraform apply` (or import the new digest) afterwards. Most teams leave image updates to CI and let Terraform only manage the function's non-image configuration.
 
 ## Terraform Remote Backend
 
@@ -405,13 +419,24 @@ data "aws_s3_bucket" "datasets" {
   bucket = var.dataset_bucket_name
 }
 
+# ECR repository for this repo's CI/CD to push images to
+resource "aws_ecr_repository" "download_lambda" {
+  name                 = "download-lambda-${var.environment}"
+  image_tag_mutability = "IMMUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 # Lambda module
 module "download_lambda" {
   source = "./modules/download-lambda"
 
   function_name       = "download-lambda-${var.environment}"
   dataset_bucket_name = data.aws_s3_bucket.datasets.id
-  lambda_zip_path     = "${path.module}/modules/download-lambda/lambda.zip"
+  package_type        = "Image"
+  image_uri           = "${aws_ecr_repository.download_lambda.repository_url}:latest"
 
   timeout      = var.environment == "prod" ? 90 : 60
   memory_size  = var.environment == "prod" ? 1024 : 512
@@ -481,20 +506,9 @@ terraform apply tfplan
 
 ### Issue: Lambda not updating after code change
 
-**Problem:** Terraform doesn't detect the change in lambda.zip
+**Problem:** You expected `terraform apply` to deploy a code change, but nothing happened
 
-**Solution:** Use `source_code_hash`:
-
-```hcl
-source_code_hash = filebase64sha256(var.lambda_zip_path)
-```
-
-Or force update:
-
-```bash
-terraform taint module.download_lambda.aws_lambda_function.download_function
-terraform apply
-```
+**Solution:** Routine code changes are deployed by this repository's GitHub Actions workflow, which calls `UpdateFunctionCode` directly with the new image — not by Terraform. `terraform apply` only needs to run when infrastructure changes (memory, timeout, IAM, VPC config, etc.), not for every code push. If you do want Terraform to track and force an update to the image, use `most_recent = true` on an `aws_ecr_image` data source (see above) and re-apply.
 
 ### Issue: Cannot reference S3 bucket
 
@@ -531,4 +545,4 @@ dataset_bucket_name = data.terraform_remote_state.shared.outputs.dataset_bucket_
 3. Run `terraform plan` to preview changes
 4. Apply with `terraform apply`
 5. Test the deployed function
-6. Set up CI/CD pipeline (see [DEPLOYMENT.md](DEPLOYMENT.md))
+6. Set up CI/CD pipeline (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md))
