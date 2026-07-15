@@ -6,7 +6,7 @@ Get your Lambda function up and running in 10 minutes.
 
 ```bash
 # Install Python dependencies
-pip install -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt
 
 # Ensure AWS CLI is configured
 aws sts get-caller-identity

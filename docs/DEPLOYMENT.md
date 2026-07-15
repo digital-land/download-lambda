@@ -4,73 +4,74 @@ This guide covers deploying the Lambda function using Terraform with IAM credent
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - AWS CLI configured
-- IAM credentials with Lambda and S3 permissions
+- IAM credentials with Lambda and ECR permissions
 - Terraform (if deploying infrastructure)
 - S3 bucket for datasets
-- S3 bucket for deployment artifacts (optional)
+- An Amazon ECR repository per environment (created by Terraform) to hold the built container images
 
 ## Architecture Overview
 
-This repository contains the **Lambda function code only**. The infrastructure is managed separately in your Terraform repository.
+This repository contains the **Lambda function code only**. The infrastructure is managed separately in your Terraform repository. The Lambda function runs as a **container image**, not a zip package.
 
 ```
 ┌─────────────────────────┐
 │ This Repository         │
 │ (Lambda Code)           │
 │                         │
-│ - Source code (src/)    │
+│ - Application code      │
+│   (application/)        │
 │ - Tests (tests/)        │
-│ - Build script          │
+│ - Dockerfile             │
 │ - GitHub Actions        │
 └────────┬────────────────┘
-         │ Builds
-         │ lambda.zip
+         │ Builds & pushes
+         │ container image
          ▼
 ┌─────────────────────────┐
-│ S3 Deployment Bucket    │
-│ (Optional)              │
+│ Amazon ECR Repository   │
+│ (per environment)       │
 │                         │
-│ lambda-latest.zip       │
+│ {environment}-download- │
+│ lambda:{tag}            │
 └────────┬────────────────┘
-         │ Referenced by
+         │ GitHub Actions updates
+         │ the Lambda function's
+         │ code directly
          ▼
 ┌─────────────────────────┐
-│ Terraform Repository    │
-│ (Infrastructure)        │
+│ Lambda Function          │
+│ (created/managed by     │
+│ your Terraform repo)    │
 │                         │
 │ - Lambda resource       │
 │ - IAM roles             │
+│ - ECR repository        │
 │ - Function URL          │
 │ - CloudFront (optional) │
 └─────────────────────────┘
 ```
 
+Note the key difference from a zip-based setup: Terraform still owns the Lambda function, IAM roles, and ECR repository, but **this repository's CI/CD updates the running function's code directly** (via `UpdateFunctionCode` with the new image) after each build — it doesn't wait for a separate `terraform apply` to pick up a new artifact.
+
 ## GitHub Repository Secrets
 
-Configure these secrets in your GitHub repository settings:
+Configure these secrets per GitHub Environment (Settings → Environments), since deployments are per-environment (development/staging/production):
 
 ### Required Secrets
 
 ```
-AWS_ACCESS_KEY_ID          - IAM access key for deployment
-AWS_SECRET_ACCESS_KEY      - IAM secret key for deployment
-AWS_REGION                 - AWS region (e.g., us-east-1)
-```
-
-### Optional Secrets
-
-```
-DEPLOYMENT_BUCKET          - S3 bucket for storing Lambda packages
-LAMBDA_FUNCTION_NAME       - Name of the Lambda function (for updates)
+DEPLOY_AWS_ACCESS_KEY_ID       - IAM access key for deployment
+DEPLOY_AWS_SECRET_ACCESS_KEY   - IAM secret key for deployment
+DEPLOY_DOCKER_REPOSITORY       - ECR repository URI to push the built image to
 ```
 
 ### Setting Up Secrets
 
 1. Go to your GitHub repository
-2. Navigate to Settings → Secrets and variables → Actions
-3. Click "New repository secret"
+2. Navigate to Settings → Environments → select (or create) an environment
+3. Click "Add secret" under Environment secrets
 4. Add each secret with its value
 
 ## IAM Permissions Required
@@ -88,15 +89,25 @@ The IAM user/role needs these permissions:
         "lambda:GetFunction",
         "lambda:GetFunctionUrlConfig"
       ],
-      "Resource": "arn:aws:lambda:*:*:function:download-lambda*"
+      "Resource": "arn:aws:lambda:*:*:function:*-download-lambda*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
     },
     {
       "Effect": "Allow",
       "Action": [
-        "s3:PutObject",
-        "s3:GetObject"
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart",
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer"
       ],
-      "Resource": "arn:aws:s3:::your-deployment-bucket/*"
+      "Resource": "arn:aws:ecr:*:*:repository/*-download-lambda"
     }
   ]
 }
@@ -106,23 +117,21 @@ The IAM user/role needs these permissions:
 
 ### Method 1: GitHub Actions (Recommended)
 
-The GitHub Actions workflow automatically builds and uploads the Lambda package when you push to main.
+The GitHub Actions workflow automatically builds the container image, pushes it to ECR, and updates the Lambda function when you push to main.
 
 **Workflow:**
-1. Push code to `main` branch
+1. Push code to `main` branch (or trigger `workflow_dispatch` for a specific environment)
 2. GitHub Actions runs tests
-3. Builds Lambda package (`lambda.zip`)
-4. Uploads to S3 (if configured)
-5. Creates artifact for download
+3. Builds the Docker image and pushes it to the environment's ECR repository
+4. Updates the Lambda function to use the newly pushed image, and waits for the update to complete
 
 **What it does NOT do:**
 - It does NOT run Terraform
-- It does NOT update the Lambda function directly
-- You must run Terraform in your infrastructure repo to deploy
+- It does NOT create the Lambda function, IAM roles, or ECR repository — those must already exist (created by your Terraform repo)
 
 ### Method 2: Manual Build + Terraform
 
-**Step 1: Build the Lambda package**
+**Step 1: Build the Docker image**
 
 ```bash
 # Clone this repository
@@ -130,25 +139,20 @@ git clone <repository-url>
 cd download-lambda
 
 # Install dev dependencies
-make install-dev
+make init
 
 # Run tests
 make test
 
-# Build Lambda package
-make build
+# Build the image
+docker build --platform linux/amd64 -t download-lambda:latest .
 ```
-
-This creates `dist/lambda.zip`.
 
 **Step 2: Copy to your Terraform repository**
 
 ```bash
 # Copy the Terraform example
 cp -r terraform-example /path/to/your/terraform-repo/modules/download-lambda
-
-# Copy the Lambda package
-cp dist/lambda.zip /path/to/your/terraform-repo/modules/download-lambda/
 ```
 
 **Step 3: Configure Terraform**
@@ -161,7 +165,8 @@ module "download_lambda" {
 
   function_name       = "download-lambda"
   dataset_bucket_name = "my-datasets-bucket"
-  lambda_zip_path     = "./modules/download-lambda/lambda.zip"
+  package_type        = "Image"
+  image_uri           = "<account-id>.dkr.ecr.<region>.amazonaws.com/download-lambda:latest"
 
   timeout      = 60
   memory_size  = 512
@@ -197,16 +202,18 @@ terraform apply
 
 ### Method 3: Direct AWS CLI Update
 
-If the Lambda function already exists, you can update just the code:
+If the Lambda function already exists, you can push a new image and update just the code:
 
 ```bash
-# Build package
-make build
+# Build and push the image
+docker build --platform linux/amd64 -t <account-id>.dkr.ecr.<region>.amazonaws.com/download-lambda:latest .
+aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
+docker push <account-id>.dkr.ecr.<region>.amazonaws.com/download-lambda:latest
 
 # Update function
 aws lambda update-function-code \
   --function-name download-lambda \
-  --zip-file fileb://dist/lambda.zip
+  --image-uri <account-id>.dkr.ecr.<region>.amazonaws.com/download-lambda:latest
 
 # Wait for update to complete
 aws lambda wait function-updated \
@@ -233,8 +240,7 @@ your-terraform-repo/
 │   └── download-lambda/
 │       ├── main.tf
 │       ├── variables.tf
-│       ├── outputs.tf
-│       └── lambda.zip
+│       └── outputs.tf
 └── main.tf  (your root module)
 ```
 
@@ -245,7 +251,8 @@ Edit `terraform.tfvars` or pass via command line:
 ```hcl
 dataset_bucket_name = "your-datasets-bucket"  # REQUIRED
 function_name       = "download-lambda"
-lambda_zip_path     = "./modules/download-lambda/lambda.zip"
+package_type        = "Image"
+image_uri           = "<account-id>.dkr.ecr.<region>.amazonaws.com/download-lambda:latest"
 timeout             = 60
 memory_size         = 512
 ```
@@ -278,46 +285,20 @@ terraform output lambda_function_url
 **1. Code Repository (this repo):**
 - Developers push code changes
 - GitHub Actions runs tests
-- On main branch: builds `lambda.zip`
-- Uploads to S3 deployment bucket
+- On main branch (or manual dispatch): builds the Docker image, pushes it to each environment's ECR repository, and updates that environment's Lambda function directly
 
 **2. Terraform Repository (your infra repo):**
-- Reference Lambda package from S3
-- Or trigger Terraform via GitHub Actions
-- Apply infrastructure changes
+- Owns the Lambda function, IAM roles, ECR repository, and Function URL/CloudFront resources
+- Run separately (and less frequently) to change infrastructure, not to ship code changes
 
 ### Complete CI/CD Pipeline
 
-**Option A: Separate Repositories**
-
 ```yaml
 # In this repo: .github/workflows/deploy.yml
-# Builds and uploads lambda.zip to S3
+# Builds and pushes the image to ECR, then updates the Lambda function's code directly
 
-# In Terraform repo: .github/workflows/terraform.yml
-# Downloads lambda.zip from S3 and runs terraform apply
-```
-
-**Option B: Terraform Cloud/Enterprise**
-
-Configure Terraform Cloud to:
-1. Watch your Terraform repository
-2. Auto-plan on changes
-3. Manual approval for apply
-
-Reference the Lambda package from S3:
-
-```hcl
-data "aws_s3_object" "lambda_package" {
-  bucket = "deployment-bucket"
-  key    = "lambda-builds/lambda-latest.zip"
-}
-
-resource "aws_lambda_function" "download_function" {
-  s3_bucket = data.aws_s3_object.lambda_package.bucket
-  s3_key    = data.aws_s3_object.lambda_package.key
-  # ... other config
-}
+# In Terraform repo: .github/workflows/terraform.yml (if you have one)
+# Applies infrastructure changes (Lambda resource, IAM, ECR repo, etc.) - independent of code deploys
 ```
 
 ## Environment Configuration
@@ -410,56 +391,45 @@ aws cloudwatch get-metric-statistics \
 
 If you need to rollback to a previous version:
 
-### Using Terraform
+### Using the Previous Image Tag
+
+Every image is tagged with a release tag (timestamp + short SHA) and the branch/ref name — see the `Build and publish Docker image` step in `.github/workflows/deploy.yml`. To roll back, point the function at a previous tag:
 
 ```bash
-# Revert to previous lambda.zip
-git checkout HEAD~1 dist/lambda.zip
+# Find previous image tags in ECR
+aws ecr describe-images \
+  --repository-name download-lambda \
+  --query 'sort_by(imageDetails,& imagePushedAt)[*].imageTags' \
+  --output table
 
-# Update Lambda
+# Roll back to a specific tag
 aws lambda update-function-code \
   --function-name download-lambda \
-  --zip-file fileb://dist/lambda.zip
+  --image-uri <account-id>.dkr.ecr.<region>.amazonaws.com/download-lambda:<previous-tag>
+
+aws lambda wait function-updated --function-name download-lambda
 ```
 
-### Using S3 Versioning
+### Using ECR Image Immutability
 
-If your deployment bucket has versioning:
-
-```bash
-# List versions
-aws s3api list-object-versions \
-  --bucket deployment-bucket \
-  --prefix lambda-builds/
-
-# Get specific version
-aws s3api get-object \
-  --bucket deployment-bucket \
-  --key lambda-builds/lambda-latest.zip \
-  --version-id <version-id> \
-  lambda-rollback.zip
-
-# Deploy
-aws lambda update-function-code \
-  --function-name download-lambda \
-  --zip-file fileb://lambda-rollback.zip
-```
+If your ECR repository has tag immutability enabled, previous tags can never be overwritten, so rolling back is always just a matter of re-pointing the function at an older, known-good tag as above.
 
 ## Troubleshooting
 
 ### Build fails on GitHub Actions
 
 Check:
-- Python version matches (3.11)
-- All dependencies in `requirements.txt`
+- Python version matches (3.12)
+- All dependencies in `requirements.txt` / `requirements-dev.txt` are resolvable
 - Tests are passing locally
+- The Docker image builds locally: `docker build --platform linux/amd64 -t download-lambda:test .`
 
-### Cannot upload to S3
+### Cannot push to ECR
 
 Check:
-- `DEPLOYMENT_BUCKET` secret is set
-- IAM credentials have S3 PutObject permission
-- Bucket exists and is in the correct region
+- `DEPLOY_DOCKER_REPOSITORY` secret is set for the target environment
+- IAM credentials have the ECR permissions listed above
+- The ECR repository exists and is in the correct region
 
 ### Lambda function not updating
 
@@ -470,12 +440,7 @@ Check:
 
 ### Terraform plan shows no changes
 
-This is expected if only the Lambda code changed. Terraform needs to detect the change:
-
-```hcl
-# Force update by using source_code_hash
-source_code_hash = filebase64sha256(var.lambda_zip_path)
-```
+This is expected if only the Lambda code changed — GitHub Actions updates the running function's image directly, so Terraform won't see a diff unless the image URI/tag is itself part of your Terraform configuration (e.g. if you pin an explicit tag in `image_uri` rather than always deploying `:latest` via CI).
 
 ## Security Best Practices
 
@@ -485,7 +450,7 @@ source_code_hash = filebase64sha256(var.lambda_zip_path)
    - Apply least-privilege permissions
 
 2. **Secrets Management:**
-   - Store AWS credentials in GitHub Secrets
+   - Store AWS credentials in GitHub Environment secrets
    - Never commit credentials to repository
    - Use environment-specific secrets
 
@@ -494,10 +459,10 @@ source_code_hash = filebase64sha256(var.lambda_zip_path)
    - Enable VPC for private access (optional)
    - Configure resource-based policies
 
-4. **Deployment Bucket:**
-   - Enable versioning
-   - Enable encryption
-   - Set lifecycle policies
+4. **Container Registry (ECR):**
+   - Enable image scanning on push
+   - Enable tag immutability
+   - Set lifecycle policies to expire old images
 
 ## Support
 

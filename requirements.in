@@ -1,0 +1,6 @@
+boto3
+pydantic
+pyarrow
+duckdb
+fastapi
+uvicorn[standard]

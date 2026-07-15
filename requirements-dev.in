@@ -1,0 +1,13 @@
+-c requirements.txt
+pip-tools==7.5.3
+pytest
+pytest-cov
+pytest-mock
+moto[server,s3]
+black
+flake8
+pandas
+pre-commit
+httpx
+testcontainers
+requests

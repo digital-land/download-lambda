@@ -59,95 +59,66 @@ GET /conservation-area.json?organisation-entity=122&field=entity&field=reference
 
 ```
 download-lambda/
-├── src/                       ## all python code in here
-│   ├── lambda_function.py     # Main Lambda handler
-│   ├── models.py              # Pydantic validation models
-│   ├── utils.py               # Request parsing utilities
-│   └── data_processor.py      # DuckDB-based Parquet processing
-├── tests/                     ## all pytest based tests
-│   └── ...
-├── scripts/                   ## helper scripts
-│   └── build.ssh              # script to build the lambda function for upload
-├── requirements.txt           # Python dependencies
-├── requirements-dev.txt       # Development dependencies
-└── Makefile                   # Convenience commands
+├── application/                     # FastAPI app, runs in Lambda via the Lambda Web Adapter
+│   ├── main.py                      # App setup, health check, startup validation
+│   ├── routers.py                   # Download endpoint
+│   ├── dependencies.py              # Dependency-injected services
+│   ├── utils.py                     # Request parsing utilities
+│   └── services/
+│       ├── s3_service.py            # S3 access
+│       └── data_stream_service.py   # DuckDB/Arrow streaming + format conversion
+├── tests/                           # unit, integration, and acceptance tests (pytest)
+├── scripts/                         # helper scripts (local Docker builds, test data, etc.)
+├── docker/                          # local dev Dockerfiles / LocalStack helpers
+├── Dockerfile                       # Container image deployed to Lambda
+├── requirements.in / requirements.txt          # Production dependencies (pip-tools)
+├── requirements-dev.in / requirements-dev.txt  # Development dependencies (pip-tools)
+└── Makefile                         # Convenience commands
 ```
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.11+
-- a python virtualenv
+- Python 3.12+
+- a python virtualenv (repo is set up to use pyenv with the `.python-version` file)
 
 ## Deployment
 
-**Note:** This repository contains the Lambda function code. Infrastructure is managed separately using Terraform.
+**Note:** This repository contains the Lambda function code. Infrastructure (the Lambda resource, IAM roles, ECR repository, etc.) is managed separately using Terraform — see [TERRAFORM_INTEGRATION.md](TERRAFORM_INTEGRATION.md).
 
-### Build Lambda Package
+The Lambda function runs as a **container image** (via the [AWS Lambda Web Adapter](https://github.com/awslabs/aws-lambda-web-adapter), see the [Dockerfile](Dockerfile)), not a traditional zip package. Deployment builds the image, pushes it to Amazon ECR, and points the Lambda function at the new image — there's no `lambda.zip` to build or upload.
 
-```bash
-# Run tests
-make test
-
-# Build deployment package
-make build
-```
-
-This creates `dist/lambda.zip`. which can be uploaded to AWS.
-
-**Quick version:**
-
-1. Copy Terraform files to your infrastructure repository:
-```bash
-cp -r terraform-example/ /path/to/your/terraform-repo/modules/download-lambda/
-cp dist/lambda.zip /path/to/your/terraform-repo/modules/download-lambda/
-```
-
-2. In your Terraform repository:
-```hcl
-module "download_lambda" {
-  source = "./modules/download-lambda"
-
-  function_name       = "download-lambda"
-  dataset_bucket_name = "my-datasets-bucket"
-  lambda_zip_path     = "./modules/download-lambda/lambda.zip"
-}
-```
-
-3. Deploy:
-```bash
-terraform init
-terraform plan
-terraform apply
-```
-
-### Alternative: Direct AWS CLI Deployment
-
-If the Lambda function already exists:
+### Build the Docker Image
 
 ```bash
-aws lambda update-function-code \
-  --function-name download-lambda \
-  --zip-file fileb://dist/lambda.zip
+docker build --platform linux/amd64 -t download-lambda:latest .
 ```
+
+Or use the helper script:
+```bash
+./scripts/build-docker.sh
+```
+
+### Deploying
+
+Deployment is handled entirely by CI/CD (see below) — push to `main`, or trigger `workflow_dispatch` for a specific environment. There's no manual deployment step for normal use; the workflow builds the image, pushes it to ECR, and updates the target Lambda function's code for you.
 
 ## CI/CD
 
-The included GitHub Actions workflow:
-- Runs tests on PRs
-- Builds Lambda package on push to main
-- Uploads to S3 for Terraform to reference
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for complete CI/CD setup.
+The included GitHub Actions workflows (`.github/workflows/test.yml` and `deploy.yml`):
+- Run the full test suite on PRs and pushes
+- On push to `main` (or manual `workflow_dispatch`), build a Docker image per environment (development/staging/production, based on configured GitHub Environments), tag it, and push it to Amazon ECR
+- Update the target Lambda function to use the newly pushed image
 
 ### Required GitHub Secrets
 
+Configured per GitHub Environment (Settings → Environments):
+
 ```
-AWS_ACCESS_KEY_ID          - IAM access key
-AWS_SECRET_ACCESS_KEY      - IAM secret key
-DEPLOYMENT_BUCKET          - S3 bucket for Lambda packages (optional)
-LAMBDA_FUNCTION_NAME       - Function name (optional)
+DEPLOY_AWS_ACCESS_KEY_ID       - IAM access key for the deploy role
+DEPLOY_AWS_SECRET_ACCESS_KEY   - IAM secret key for the deploy role
+DEPLOY_DOCKER_REPOSITORY       - ECR repository URI to push the built image to
 ```
 
 ## Development Setup
@@ -165,7 +136,7 @@ make init ENV=prod
 
 The `ENV` variable controls which requirements are installed:
 - `ENV=local` (default):
-  - Installs `requirements-dev.txt` (includes testcontainers, pytest, black, etc.)
+  - Installs `requirements.txt` and `requirements-dev.txt` (includes testcontainers, pytest, black, etc.)
   - Builds Lambda Docker image (`download-lambda:test`) for integration tests
   - Sets up pre-commit hooks
 - `ENV=prod`: Installs `requirements.txt` only (production dependencies)
@@ -241,10 +212,10 @@ See [TESTING.md](TESTING.md) for comprehensive testing documentation.
 
 ```bash
 # Install dependencies
-make install-dev
+make init
 
 # Run specific test file
-pytest tests/unit/test_models.py -v
+pytest tests/unit/test_s3_service.py -v
 
 # Run tests matching pattern
 pytest -k "filter" -v
@@ -292,7 +263,7 @@ s3://my-datasets-bucket/
 
 ### Configuration
 
-- **Chunk Size**: Default 10,000 rows per batch. Configurable in `data_processor.py`
+- **Chunk Size**: Default 10,000 rows per batch. Configurable in [data_stream_service.py](application/services/data_stream_service.py)
 - **Memory**: 256MB Lambda memory is sufficient for most datasets
 - **Timeout**: 30-60 seconds depending on dataset size
 - **Streaming**: Supports Lambda Function URL response streaming for large files
@@ -320,10 +291,10 @@ Request → Lambda → DuckDB → S3 Parquet (via httpfs)
 
 ## Monitoring
 
-View Lambda logs in CloudWatch:
+View Lambda logs in CloudWatch (replace `{environment}` with `development`, `staging`, `production`, etc.):
 
 ```bash
-aws logs tail /aws/lambda/download-lambda-stack-DownloadFunction --follow
+aws logs tail /aws/lambda/{environment}-download-lambda --follow
 ```
 
 ## Development
@@ -360,13 +331,13 @@ make clean
 
 ### Timeout Errors
 
-- Increase Lambda timeout in [template.yaml](template.yaml)
-- Reduce chunk size in [data_processor.py](src/data_processor.py)
+- Increase the Lambda function's timeout in Terraform (this repo doesn't manage infrastructure — see [TERRAFORM_INTEGRATION.md](TERRAFORM_INTEGRATION.md))
+- Reduce chunk size in [data_stream_service.py](application/services/data_stream_service.py)
 - Consider pagination for very large results
 
 ### Memory Errors
 
-- Increase Lambda memory in [template.yaml](template.yaml)
+- Increase the Lambda function's memory in Terraform
 - Reduce chunk size to process fewer rows at once
 
 ## License
@@ -383,9 +354,8 @@ See [LICENSE](LICENSE) file
 
 ## Additional Documentation
 
-
-## Architecture
-
-```
-User Request → CloudFront/Function URL → Lambda Function → S3 Parquet Files → Streaming Response
-```
+- [TERRAFORM_INTEGRATION.md](TERRAFORM_INTEGRATION.md) - how this repository's image fits into your Terraform-managed infrastructure
+- [TESTING.md](TESTING.md) - full testing guide
+- [DEVELOPMENT.md](DEVELOPMENT.md) - local development setup
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - detailed architecture notes
+- [docs/QUICKSTART.md](docs/QUICKSTART.md) - quick start guide
