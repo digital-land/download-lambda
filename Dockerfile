@@ -4,6 +4,10 @@
 # Use AWS Lambda Python base image
 FROM public.ecr.aws/lambda/python:3.12
 
+# Apply OS security updates that AWS hasn't yet rolled into the base image
+# (e.g. pcre2 CVE-2026-89160). --releasever=latest pulls from the newest AL2023 repos.
+RUN microdnf --releasever=latest -y upgrade && microdnf clean all
+
 # Copy Lambda Web Adapter from its official image
 # The adapter translates Lambda events to HTTP requests for FastAPI
 COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.8.3 /lambda-adapter /opt/extensions/lambda-adapter
