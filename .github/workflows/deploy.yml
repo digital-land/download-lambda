@@ -100,8 +100,11 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ matrix.environment }}-download-lambda
           IMAGE_TAG: ${{ github.sha }}
+        # Lambda only accepts a single-platform image manifest. Docker 29+ adds provenance/SBOM
+        # attestations by default, which turns the image into a manifest index that Lambda
+        # rejects ("image manifest, config or layer media type ... is not supported").
         run: |
-          docker build --platform linux/amd64 --build-arg DEPLOY_TIME="$(date +%Y-%m-%dT%H:%M:%S)" -t $DOCKER_REPO:${{ steps.vars.outputs.sha_short }} .
+          docker build --platform linux/amd64 --provenance=false --sbom=false --build-arg DEPLOY_TIME="$(date +%Y-%m-%dT%H:%M:%S)" -t $DOCKER_REPO:${{ steps.vars.outputs.sha_short }} .
           docker tag $DOCKER_REPO:${{ steps.vars.outputs.sha_short }} $DOCKER_REPO:${{ steps.vars.outputs.safe_ref }}
           docker tag $DOCKER_REPO:${{ steps.vars.outputs.sha_short }} $DOCKER_REPO:${{ steps.vars.outputs.release_tag }}
           docker push $DOCKER_REPO:${{ steps.vars.outputs.safe_ref }}
