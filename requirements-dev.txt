@@ -4,25 +4,10 @@
 #
 #    pip-compile --output-file=requirements-dev.txt requirements-dev.in
 #
-annotated-types==0.7.0
-    # via
-    #   -c requirements.txt
-    #   pydantic
-antlr4-python3-runtime==4.13.2
-    # via moto
 anyio==4.14.2
     # via
     #   -c requirements.txt
     #   httpx
-attrs==26.1.0
-    # via
-    #   jsonschema
-    #   jsonschema-path
-    #   referencing
-aws-sam-translator==1.111.0
-    # via cfn-lint
-aws-xray-sdk==2.15.0
-    # via moto
 black==26.5.1
     # via -r requirements-dev.in
 blinker==1.9.0
@@ -30,12 +15,10 @@ blinker==1.9.0
 boto3==1.43.47
     # via
     #   -c requirements.txt
-    #   aws-sam-translator
     #   moto
 botocore==1.43.47
     # via
     #   -c requirements.txt
-    #   aws-xray-sdk
     #   boto3
     #   moto
     #   s3transfer
@@ -50,8 +33,6 @@ cffi==2.1.0
     # via cryptography
 cfgv==3.5.0
     # via pre-commit
-cfn-lint==1.53.0
-    # via moto
 charset-normalizer==3.4.9
     # via requests
 click==8.4.2
@@ -63,15 +44,11 @@ click==8.4.2
 coverage[toml]==7.15.1
     # via pytest-cov
 cryptography==49.0.0
-    # via
-    #   joserfc
-    #   moto
+    # via moto
 distlib==0.4.3
     # via virtualenv
 docker==7.2.0
-    # via
-    #   moto
-    #   testcontainers
+    # via testcontainers
 filelock==3.29.7
     # via
     #   python-discovery
@@ -80,12 +57,10 @@ flake8==7.3.0
     # via -r requirements-dev.in
 flask==3.1.3
     # via
+    #   -r requirements-dev.in
     #   flask-cors
-    #   moto
 flask-cors==6.0.5
-    # via moto
-graphql-core==3.2.11
-    # via moto
+    # via -r requirements-dev.in
 h11==0.16.0
     # via
     #   -c requirements.txt
@@ -113,27 +88,6 @@ jmespath==1.1.0
     #   -c requirements.txt
     #   boto3
     #   botocore
-joserfc==1.7.3
-    # via moto
-jsonpatch==1.33
-    # via cfn-lint
-jsonpath-ng==1.8.0
-    # via moto
-jsonpointer==3.1.1
-    # via jsonpatch
-jsonschema==4.26.0
-    # via
-    #   aws-sam-translator
-    #   openapi-schema-validator
-    #   openapi-spec-validator
-jsonschema-path==0.5.0
-    # via openapi-spec-validator
-jsonschema-specifications==2025.9.1
-    # via
-    #   jsonschema
-    #   openapi-schema-validator
-lazy-object-proxy==1.12.0
-    # via openapi-spec-validator
 markupsafe==3.0.3
     # via
     #   flask
@@ -141,22 +95,14 @@ markupsafe==3.0.3
     #   werkzeug
 mccabe==0.7.0
     # via flake8
-moto[s3,server]==5.2.2
+moto[s3]==5.2.2
     # via -r requirements-dev.in
-mpmath==1.3.0
-    # via sympy
 mypy-extensions==1.1.0
     # via black
-networkx==3.6.1
-    # via cfn-lint
 nodeenv==1.10.0
     # via pre-commit
 numpy==2.5.1
     # via pandas
-openapi-schema-validator==0.9.0
-    # via openapi-spec-validator
-openapi-spec-validator==0.9.0
-    # via moto
 packaging==26.2
     # via
     #   black
@@ -165,8 +111,6 @@ packaging==26.2
     #   wheel
 pandas==3.0.3
     # via -r requirements-dev.in
-pathable==0.6.0
-    # via jsonschema-path
 pathspec==1.1.1
     # via black
 pip-tools==7.5.3
@@ -188,27 +132,10 @@ pycodestyle==2.14.0
     # via flake8
 pycparser==3.0
     # via cffi
-pydantic==2.13.4
-    # via
-    #   -c requirements.txt
-    #   aws-sam-translator
-    #   openapi-schema-validator
-    #   openapi-spec-validator
-    #   pydantic-settings
-pydantic-core==2.46.4
-    # via
-    #   -c requirements.txt
-    #   pydantic
-pydantic-settings==2.14.2
-    # via
-    #   openapi-schema-validator
-    #   openapi-spec-validator
 pyflakes==3.4.0
     # via flake8
 pygments==2.20.0
     # via pytest
-pyparsing==3.3.2
-    # via moto
 pyproject-hooks==1.2.0
     # via
     #   build
@@ -232,26 +159,15 @@ python-discovery==1.4.4
 python-dotenv==1.2.2
     # via
     #   -c requirements.txt
-    #   pydantic-settings
     #   testcontainers
 pytokens==0.4.1
     # via black
 pyyaml==6.0.3
     # via
     #   -c requirements.txt
-    #   cfn-lint
-    #   jsonschema-path
     #   moto
     #   pre-commit
     #   responses
-referencing==0.37.0
-    # via
-    #   jsonschema
-    #   jsonschema-path
-    #   jsonschema-specifications
-    #   openapi-schema-validator
-regex==2026.7.10
-    # via cfn-lint
 requests==2.34.2
     # via
     #   -r requirements-dev.in
@@ -260,12 +176,6 @@ requests==2.34.2
     #   responses
 responses==0.26.2
     # via moto
-rfc3339-validator==0.1.4
-    # via openapi-schema-validator
-rpds-py==2026.6.3
-    # via
-    #   jsonschema
-    #   referencing
 s3transfer==0.19.1
     # via
     #   -c requirements.txt
@@ -274,27 +184,13 @@ six==1.17.0
     # via
     #   -c requirements.txt
     #   python-dateutil
-    #   rfc3339-validator
-sympy==1.14.0
-    # via cfn-lint
 testcontainers==4.14.2
     # via -r requirements-dev.in
 typing-extensions==4.16.0
     # via
     #   -c requirements.txt
     #   anyio
-    #   aws-sam-translator
-    #   cfn-lint
-    #   pydantic
-    #   pydantic-core
-    #   referencing
     #   testcontainers
-    #   typing-inspection
-typing-inspection==0.4.2
-    # via
-    #   -c requirements.txt
-    #   pydantic
-    #   pydantic-settings
 urllib3==2.7.0
     # via
     #   -c requirements.txt
@@ -313,9 +209,7 @@ werkzeug==3.1.8
 wheel==0.47.0
     # via pip-tools
 wrapt==2.2.2
-    # via
-    #   aws-xray-sdk
-    #   testcontainers
+    # via testcontainers
 xmltodict==1.0.4
     # via moto
 
