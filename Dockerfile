@@ -43,6 +43,11 @@ RUN mkdir -p ${LAMBDA_TASK_ROOT}/.duckdb && \
     python -c "import duckdb; conn = duckdb.connect(':memory:'); conn.execute('INSTALL httpfs'); conn.execute('LOAD httpfs'); print('httpfs extension pre-installed successfully')" && \
     echo "Extension installed to: $(find ${LAMBDA_TASK_ROOT}/.duckdb -name 'httpfs.duckdb_extension' 2>/dev/null || echo 'not found')"
 
+# Remove pip from the final image. It is only needed at build time, and the
+# copy bundled with the base image carries known CVEs that the base image
+# doesn't upgrade.
+RUN python -m pip uninstall -y pip
+
 # Copy application code
 COPY application/ ${LAMBDA_TASK_ROOT}/application/
 
